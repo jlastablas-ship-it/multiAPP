@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Table JSON to IndexedDB</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #f3f4f6;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        .drop-zone {
+            border: 2px dashed #cbd5e1;
+            transition: all 0.3s ease;
+        }
+        .drop-zone.dragover {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm py-4 px-6 sticky top-0 z-10">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
+                </svg>
+                DataStore SPA
+            </h1>
+            <div id="db-status" class="flex items-center space-x-4">
+                <div class="flex items-center space-x-2">
+                    <span class="h-3 w-3 rounded-full bg-red-500" id="status-indicator"></span>
+                    <span class="text-sm text-gray-600 font-medium" id="status-text">Sin base de datos</span>
+                </div>
+                <button id="reset-db" class="hidden px-3 py-1 bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 transition text-xs font-bold uppercase tracking-wider">
+                    Reiniciar
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow p-6">
+        <div class="max-w-7xl mx-auto">
+            
+            <!-- Setup View -->
+            <div id="setup-view" class="bg-white rounded-xl shadow-md p-8 text-center max-w-2xl mx-auto mt-10">
+                <div class="mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">Cargar Estructura JSON</h2>
+                    <p class="text-gray-600 mt-2 text-balance">Los objetos complejos se desglosarán en múltiples registros manteniendo los campos comunes.</p>
+                </div>
+
+                <div id="drop-zone" class="drop-zone rounded-lg p-10 cursor-pointer">
+                    <input type="file" id="file-input" class="hidden" accept=".json">
+                    <div class="space-y-2">
+                        <svg class="w-12 h-12 text-gray-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                        </svg>
+                        <p class="text-gray-500 text-lg">Arrastra tu JSON aquí o <span class="text-blue-600 font-semibold">selecciona un archivo</span></p>
+                    </div>
+                </div>
+
+                <div id="loading-spinner" class="hidden mt-6 text-center">
+                    <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto"></div>
+                    <p class="text-sm text-gray-500 mt-3 font-medium">Procesando y desglosando registros...</p>
+                </div>
+            </div>
+
+            <!-- Dashboard View -->
+            <div id="dashboard-view" class="hidden space-y-12">
+                <div id="tables-container" class="space-y-10 pb-20"></div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Notification -->
+    <div id="notification" class="fixed bottom-6 right-6 transform translate-y-20 opacity-0 transition-all duration-300 bg-gray-900 text-white px-6 py-3 rounded-lg shadow-2xl z-50 text-sm font-medium">
+        Mensaje
+    </div>
+
+    <script>
+        const DB_NAME = 'Deep_Structure_JSON_DB';
+        let db = null;
+
+        const setupView = document.getElementById('setup-view');
+        const dashboardView = document.getElementById('dashboard-view');
+        const tablesContainer = document.getElementById('tables-container');
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+        const resetBtn = document.getElementById('reset-db');
+
+        async function init() {
+            setupEventListeners();
+            checkExistingDB();
+        }
+
+        function setupEventListeners() {
+            dropZone.onclick = () => fileInput.click();
+            fileInput.onchange = (e) => handleFile(e.target.files[0]);
+            
+            dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
+            dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+            dropZone.ondrop = (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('dragover');
+                handleFile(e.dataTransfer.files[0]);
+            };
+
+            resetBtn.onclick = deleteDB;
+        }
+
+        async function checkExistingDB() {
+            const request = indexedDB.open(DB_NAME);
+            request.onsuccess = (e) => {
+                const database = e.target.result;
+                if (database.objectStoreNames.length > 0) {
+                    db = database;
+                    updateUIStatus(true);
+                    renderAllTables();
+                } else {
+                    database.close();
+                    updateUIStatus(false);
+                }
+            };
+        }
+
+        function handleFile(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const json = JSON.parse(e.target.result);
+                    loadingSpinner.classList.remove('hidden');
+                    dropZone.classList.add('hidden');
+                    await processAndStore(json);
+                } catch (err) {
+                    showNotification("Error: JSON no válido");
+                    loadingSpinner.classList.add('hidden');
+                    dropZone.classList.remove('hidden');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function extractTables(data, results = {}) {
+            if (Array.isArray(data)) {
+                results["datos_principales"] = data;
+            } else if (typeof data === 'object' && data !== null) {
+                for (const key in data) {
+                    const value = data[key];
+                    if (Array.isArray(value)) {
+                        results[key] = value;
+                    } else if (typeof value === 'object' && value !== null) {
+                        results[key] = [value];
+                    }
+                }
+                if (Object.keys(results).length === 0 && Object.keys(data).length > 0) {
+                    results["registro_raiz"] = [data];
+                }
+            }
+            return results;
+        }
+
+        function flattenItem(item) {
+            // Asegurarse de que el item sea un objeto
+            if (typeof item !== 'object' || item === null) {
+                return [{ valor_dato: item }];
+            }
+
+            const base = {};
+            let complexKey = null;
+            let complexValue = null;
+
+            for (const key in item) {
+                // Solo desglosamos el PRIMER objeto o array encontrado para evitar explosión combinatoria infinita
+                if (item[key] !== null && typeof item[key] === 'object' && !complexKey) {
+                    complexKey = key;
+                    complexValue = item[key];
+                } else {
+                    base[key] = item[key];
+                }
+            }
+
+            if (!complexKey) return [item];
+
+            const result = [];
+            if (Array.isArray(complexValue)) {
+                complexValue.forEach(subItem => {
+                    // Combinamos base con el valor desglosado asegurando que sea un objeto
+                    const subFlattened = flattenComplexValue(complexKey, subItem);
+                    result.push({ ...base, ...subFlattened });
+                });
+            } else {
+                Object.entries(complexValue).forEach(([subKey, subVal]) => {
+                    result.push({ 
+                        ...base, 
+                        [complexKey + '_clave']: subKey, 
+                        [complexKey + '_valor']: (typeof subVal === 'object' ? JSON.stringify(subVal) : subVal) 
+                    });
+                });
+            }
+
+            // Si el desglose falló por alguna razón o devolvió vacío, devolver base
+            return result.length > 0 ? result : [base];
+        }
+
+        function flattenComplexValue(prefix, value) {
+            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                const mapped = {};
+                for (const k in value) {
+                    mapped[prefix + "_" + k] = value[k];
+                }
+                return mapped;
+            }
+            // Si el valor dentro del array es un primitivo
+            return { [prefix]: value };
+        }
+
+        async function processAndStore(json) {
+            const rawTables = extractTables(json);
+            const dataStructure = {};
+
+            Object.keys(rawTables).forEach(tableName => {
+                const flattenedRows = [];
+                const sourceData = rawTables[tableName];
+                
+                if (Array.isArray(sourceData)) {
+                    sourceData.forEach(row => {
+                        flattenedRows.push(...flattenItem(row));
+                    });
+                }
+                dataStructure[tableName] = flattenedRows;
+            });
+
+            if (db) db.close();
+            
+            const deleteReq = indexedDB.deleteDatabase(DB_NAME);
+            deleteReq.onsuccess = () => {
+                const openReq = indexedDB.open(DB_NAME, 1);
+                
+                openReq.onupgradeneeded = (e) => {
+                    const newDb = e.target.result;
+                    Object.keys(dataStructure).forEach(tableName => {
+                        const safeName = tableName.replace(/\s+/g, '_');
+                        newDb.createObjectStore(safeName, { keyPath: '__local_id', autoIncrement: true });
+                    });
+                };
+
+                openReq.onsuccess = (e) => {
+                    db = e.target.result;
+                    const transaction = db.transaction(db.objectStoreNames, 'readwrite');
+                    
+                    transaction.onabort = () => {
+                        console.error("Transacción abortada:", transaction.error);
+                        showNotification("Error al guardar datos");
+                    };
+
+                    Object.keys(dataStructure).forEach(tableName => {
+                        const safeName = tableName.replace(/\s+/g, '_');
+                        const store = transaction.objectStore(safeName);
+                        dataStructure[tableName].forEach(item => {
+                            // IMPORTANTE: Asegurar que item es un objeto y no tiene una propiedad __local_id previa
+                            // que choque con el autoIncrement si no es compatible.
+                            const record = (typeof item === 'object' && item !== null) ? { ...item } : { valor: item };
+                            delete record.__local_id; 
+                            store.add(record);
+                        });
+                    });
+
+                    transaction.oncomplete = () => {
+                        showNotification("Importación con desglose completada");
+                        updateUIStatus(true);
+                        renderAllTables();
+                    };
+                };
+
+                openReq.onerror = (e) => {
+                    console.error("Error al abrir IndexedDB:", e);
+                    showNotification("Error al inicializar la base de datos");
+                };
+            };
+        }
+
+        async function renderAllTables() {
+            tablesContainer.innerHTML = '';
+            const storeNames = Array.from(db.objectStoreNames);
+            
+            for (const name of storeNames) {
+                const data = await getStoreData(name);
+                if (data.length > 0) {
+                    createTableUI(name, data);
+                }
+            }
+
+            setupView.classList.add('hidden');
+            dashboardView.classList.remove('hidden');
+            loadingSpinner.classList.add('hidden');
+            resetBtn.classList.remove('hidden');
+        }
+
+        function getStoreData(name) {
+            return new Promise((resolve) => {
+                const transaction = db.transaction(name, 'readonly');
+                const store = transaction.objectStore(name);
+                const request = store.getAll();
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => resolve([]);
+            });
+        }
+
+        function createTableUI(tableName, data) {
+            const keys = Array.from(new Set(data.flatMap(obj => Object.keys(obj))))
+                              .filter(k => k !== '__local_id');
+            
+            const section = document.createElement('section');
+            section.className = "space-y-3 animate-fade-in";
+            
+            section.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-blue-600 text-white p-1.5 rounded-lg shadow-sm">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-bold text-gray-800 tracking-tight">${tableName}</h3>
+                        <span class="text-xs font-semibold bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                            ${data.length} registros
+                        </span>
+                    </div>
+                </div>
+                <div class="bg-white shadow-lg rounded-xl overflow-hidden border border-gray-200">
+                    <div class="overflow-x-auto max-h-[500px]">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50 sticky top-0 z-10">
+                                <tr>
+                                    ${keys.map(k => `
+                                        <th class="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-widest border-b border-gray-100 bg-gray-50">
+                                            ${k}
+                                        </th>
+                                    `).join('')}
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-100">
+                                ${data.map(row => `
+                                    <tr class="hover:bg-blue-50/30 transition-colors">
+                                        ${keys.map(k => {
+                                            const val = row[k];
+                                            let display = val;
+                                            if (val === null) display = '<span class="text-gray-300 italic">null</span>';
+                                            else if (typeof val === 'object') display = JSON.stringify(val);
+                                            
+                                            return `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">${display !== undefined ? display : '-'}</td>`;
+                                        }).join('')}
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            tablesContainer.appendChild(section);
+        }
+
+        function deleteDB() {
+            if (db) db.close();
+            indexedDB.deleteDatabase(DB_NAME).onsuccess = () => location.reload();
+        }
+
+        function updateUIStatus(isActive) {
+            statusIndicator.className = `h-3 w-3 rounded-full ${isActive ? 'bg-green-500' : 'bg-red-500'}`;
+            statusText.innerText = isActive ? "DB Activa" : "Desconectado";
+        }
+
+        function showNotification(msg) {
+            const n = document.getElementById('notification');
+            n.innerText = msg;
+            n.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => n.classList.add('translate-y-20', 'opacity-0'), 3000);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

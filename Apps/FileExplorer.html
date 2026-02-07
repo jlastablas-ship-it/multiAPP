@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>eFileExplorer Pro</title>
+    <link rel="shortcut icon" href="../images/test.png" type="image/png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#0f172a',
+                        darkCard: '#1e293b',
+                        darkBorder: '#334155'
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root { --transition-speed: 0.3s; }
+        .dark body { background-color: #0f172a; color: #f1f5f9; }
+        .dark .bg-white { background-color: #1e293b !important; }
+        .dark .text-gray-800 { color: #f8fafc !important; }
+        .dark .border-gray-200 { border-color: #334155 !important; }
+        body { transition: background-color var(--transition-speed), color var(--transition-speed); }
+        .sidebar-transition { transition: width var(--transition-speed), margin var(--transition-speed), height var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed); }
+        #app-nav.collapsed { width: 4.5rem !important; }
+        #app-nav.collapsed .nav-text, #app-nav.collapsed .nav-header-text { display: none; }
+        #app-notification { transform: translateY(150%); transition: transform 0.3s ease-out; z-index: 1000; }
+        #app-notification.show { transform: translateY(0); }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900 h-screen flex flex-col overflow-hidden">
+
+    <!-- Hidden inputs for file/directory selection -->
+    <input type="file" id="fallback-file-input" multiple class="hidden">
+    <input type="file" id="fallback-dir-input" webkitdirectory directory class="hidden">
+
+    <!-- TEMPLATES -->
+    <template data-view-id="home">
+        <div class="py-10 text-center space-y-6">
+            <div class="inline-block p-4 bg-blue-100 dark:bg-blue-900/30 rounded-full mb-4">
+                <i class="fas fa-folder-tree text-5xl text-blue-600 dark:text-blue-400"></i>
+            </div>
+            <h1 class="text-4xl font-black text-gray-800 tracking-tight dark:text-white">eFileExplorer</h1>
+            <p class="text-lg text-gray-500 max-w-2xl mx-auto dark:text-gray-400">
+                Gestión de archivos híbrida: Local e Inspección Web Recursiva.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl mx-auto mt-12">
+                <button onclick="setView('explorer')" class="p-6 bg-white dark:bg-darkCard border border-gray-200 dark:border-darkBorder rounded-2xl shadow-sm hover:shadow-md transition-all text-left group">
+                    <i class="fas fa-hdd text-2xl text-blue-500 mb-3 group-hover:scale-110 transition-transform"></i>
+                    <h3 class="font-bold text-lg text-gray-800 dark:text-white">Explorador Local</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Persistencia física en IndexedDB.</p>
+                </button>
+                <button onclick="setView('web-explorer')" class="p-6 bg-white dark:bg-darkCard border border-gray-200 dark:border-darkBorder rounded-2xl shadow-sm hover:shadow-md transition-all text-left group">
+                    <i class="fas fa-spider text-2xl text-purple-500 mb-3 group-hover:scale-110 transition-transform"></i>
+                    <h3 class="font-bold text-lg text-gray-800 dark:text-white">Rastreador Web</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Encuentra activos y subcarpetas en la URL actual.</p>
+                </button>
+            </div>
+        </div>
+    </template>
+
+    <template data-view-id="explorer">
+        <div class="space-y-6">
+            <header class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-3xl font-bold text-gray-800 dark:text-white">Explorador Local</h2>
+                    <p class="text-gray-500 dark:text-gray-400 text-sm">Archivos guardados en el navegador.</p>
+                </div>
+                <div class="flex gap-2">
+                    <button id="main-btn-open-files" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+                        <i class="fas fa-file-upload"></i> Archivos
+                    </button>
+                    <button id="main-btn-open-dir" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+                        <i class="fas fa-folder-plus"></i> Carpeta
+                    </button>
+                </div>
+            </header>
+            <div class="bg-white dark:bg-darkCard rounded-xl border border-gray-200 dark:border-darkBorder shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-darkBorder">
+                                <th class="px-6 py-3">Nombre / Ruta</th>
+                                <th class="px-6 py-3">Tipo</th>
+                                <th class="px-6 py-3">Tamaño</th>
+                                <th class="px-6 py-3 text-right">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="file-list-body" class="divide-y divide-gray-50 dark:divide-darkBorder"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template data-view-id="web-explorer">
+        <div class="space-y-6">
+            <header class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-3xl font-bold text-gray-800 dark:text-white">Rastreador Web</h2>
+                    <p class="text-gray-500 dark:text-gray-400 text-sm">Inspeccionando recursos y subcarpetas del servidor.</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="refreshWebExplorer()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+                        <i class="fas fa-search"></i> Escanear Profundamente
+                    </button>
+                </div>
+            </header>
+            <div class="bg-white dark:bg-darkCard rounded-xl border border-gray-200 dark:border-darkBorder shadow-sm overflow-hidden">
+                <div class="p-4 border-b border-gray-100 dark:border-darkBorder bg-gray-50/50 dark:bg-slate-900/50 flex justify-between items-center">
+                    <div class="text-sm font-medium dark:text-gray-300">
+                        <i class="fas fa-link text-purple-500 mr-2"></i> <span id="web-url-display">...</span>
+                    </div>
+                    <div id="web-scan-stats" class="text-xs text-gray-400">Sin escanear</div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-darkBorder">
+                                <th class="px-6 py-3">Recurso Encontrado</th>
+                                <th class="px-6 py-3">Ubicación / Tipo</th>
+                                <th class="px-6 py-3">Fuente</th>
+                                <th class="px-6 py-3 text-right">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="web-file-list-body" class="divide-y divide-gray-50 dark:divide-darkBorder"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template data-view-id="settings">
+        <div class="space-y-8">
+            <header><h2 class="text-3xl font-bold dark:text-white">Configuración</h2></header>
+            <section class="bg-white dark:bg-darkCard p-6 rounded-xl border border-gray-200 dark:border-darkBorder shadow-sm space-y-6">
+                <div>
+                    <h3 class="font-bold text-lg mb-4 dark:text-white"><i class="fas fa-palette text-blue-500 mr-2"></i>Apariencia</h3>
+                    <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-900/50 rounded-lg border dark:border-darkBorder">
+                        <span class="font-medium dark:text-gray-200">Tema Visual</span>
+                        <div class="flex bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+                            <button onclick="updateTheme('light')" class="px-4 py-1 rounded-md text-sm transition-all hover:bg-white dark:hover:bg-gray-600">Claro</button>
+                            <button onclick="updateTheme('dark')" class="px-4 py-1 rounded-md text-sm transition-all hover:bg-white dark:hover:bg-gray-600">Oscuro</button>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg mb-4 dark:text-white"><i class="fas fa-trash text-red-500 mr-2"></i>Mantenimiento</h3>
+                    <button onclick="clearDatabase()" class="px-4 py-2 bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg text-sm font-bold border border-red-200 dark:border-red-800/50 hover:bg-red-200 dark:hover:bg-red-900/40 transition-colors">
+                        Borrar todos los archivos locales
+                    </button>
+                </div>
+            </section>
+        </div>
+    </template>
+
+    <template data-view-id="database">
+        <div class="space-y-8">
+            <header><h2 class="text-3xl font-bold dark:text-white">Base de Datos Interna</h2></header>
+            <div id="db-tables-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+            <div id="table-inspector" class="bg-white dark:bg-darkCard p-6 rounded-xl border border-gray-200 dark:border-darkBorder shadow-sm min-h-[200px] overflow-x-auto">
+                <p class="text-gray-400 text-center italic mt-10">Selecciona una tabla para inspeccionar registros.</p>
+            </div>
+        </div>
+    </template>
+
+    <!-- UI STRUCTURE -->
+    <header id="app-header" class="bg-white dark:bg-darkCard border-b border-gray-200 dark:border-darkBorder shadow-sm z-30 sidebar-transition flex items-center justify-between px-4 h-14 overflow-hidden">
+        <div class="flex items-center gap-3">
+            <i class="fas fa-folder-tree text-blue-600 dark:text-blue-400 text-xl"></i>
+            <h1 class="font-bold text-lg dark:text-white">eFileExplorer</h1>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="hidden md:block text-xs text-gray-400 font-mono">Ver 2.6 | Professional</div>
+            <button onclick="toggleFullscreen()" class="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"><i class="fas fa-expand"></i></button>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden relative">
+        <nav id="app-nav" class="bg-white dark:bg-darkCard border-r border-gray-200 dark:border-darkBorder w-64 sidebar-transition flex flex-col z-20">
+            <!-- Sección Superior -->
+            <div class="px-2 space-y-1 py-4">
+                <div class="px-3 mb-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest nav-header-text">Navegación</div>
+                <button onclick="setView('home')" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-50 dark:hover:bg-slate-700/50 dark:text-gray-200 transition-colors">
+                    <i class="fas fa-home w-6 text-blue-500"></i> <span class="nav-text">Inicio</span>
+                </button>
+                <button onclick="setView('explorer')" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-blue-50 dark:hover:bg-slate-700/50 dark:text-gray-200 transition-colors">
+                    <i class="fas fa-hdd w-6 text-indigo-500"></i> <span class="nav-text">Explorador Local</span>
+                </button>
+                <button onclick="setView('web-explorer')" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/10 dark:text-gray-200 transition-colors">
+                    <i class="fas fa-spider w-6 text-purple-500"></i> <span class="nav-text">Rastreador Web</span>
+                </button>
+            </div>
+
+            <!-- Sección Inferior -->
+            <div class="mt-auto px-2 space-y-1 py-4 border-t border-gray-100 dark:border-darkBorder">
+                <div class="pt-2 pb-2 px-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest nav-header-text">Sistema</div>
+                <button onclick="setView('database')" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 dark:text-gray-200 transition-colors text-left">
+                    <i class="fas fa-database w-6 text-green-500"></i> <span class="nav-text">Data Base</span>
+                </button>
+                <button onclick="setView('settings')" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700/50 dark:text-gray-200 transition-colors text-left">
+                    <i class="fas fa-cog w-6 text-gray-400"></i> <span class="nav-text">Configuración</span>
+                </button>
+            </div>
+        </nav>
+
+        <main id="app-main" class="flex-1 overflow-y-auto p-6 transition-all duration-300">
+            <div id="content-area" class="max-w-6xl mx-auto"></div>
+        </main>
+    </div>
+
+    <div id="app-notification" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 text-sm font-medium">
+        <i id="notif-icon" class="fas fa-info-circle"></i><span id="notif-message">Mensaje</span>
+    </div>
+
+    <script>
+        // Database Initialization
+        const db = new Dexie("eFileExplorerDB");
+        db.version(1).stores({
+            config: "id, value",
+            files: "++id, name, type, size, lastModified, webkitRelativePath" 
+        });
+
+        const state = { theme: 'dark', currentView: 'home', filesInDB: [] };
+
+        async function saveConfig() { 
+            await db.config.put({id: 'app_state', value: JSON.parse(JSON.stringify(state))}); 
+        }
+
+        async function loadConfig() { 
+            const saved = await db.config.get('app_state'); 
+            if (saved) { 
+                state.theme = saved.value.theme || 'dark'; 
+                state.currentView = saved.value.currentView || 'home'; 
+            }
+        }
+
+        function setView(viewId) {
+            state.currentView = viewId;
+            const container = document.getElementById('content-area');
+            const template = document.querySelector(`template[data-view-id="${viewId}"]`);
+            if (template) {
+                container.innerHTML = '';
+                container.appendChild(template.content.cloneNode(true));
+                initViewLogic(viewId);
+            }
+            saveConfig();
+        }
+
+        async function initViewLogic(viewId) {
+            if (viewId === 'explorer') {
+                await loadFilesFromDB();
+                document.getElementById('main-btn-open-files')?.addEventListener('click', () => triggerInput('fallback-file-input'));
+                document.getElementById('main-btn-open-dir')?.addEventListener('click', () => triggerInput('fallback-dir-input'));
+            } else if (viewId === 'web-explorer') {
+                document.getElementById('web-url-display').innerText = window.location.href;
+            } else if (viewId === 'database') {
+                initDatabaseLogic();
+            }
+        }
+
+        // --- LOCAL EXPLORER LOGIC ---
+        async function loadFilesFromDB() {
+            state.filesInDB = await db.files.toArray();
+            renderFileList();
+        }
+
+        function triggerInput(id) {
+            const input = document.getElementById(id);
+            input.onchange = (e) => saveFiles(e.target.files);
+            input.click();
+        }
+
+        async function saveFiles(fileList) {
+            const files = Array.from(fileList);
+            if (files.length === 0) return;
+            showNotification(`Importando ${files.length} elementos...`, "fa-spinner fa-spin");
+            for (const f of files) {
+                const buffer = await f.arrayBuffer();
+                await db.files.add({
+                    name: f.name,
+                    type: f.type || 'application/octet-stream',
+                    size: f.size,
+                    lastModified: f.lastModified,
+                    webkitRelativePath: f.webkitRelativePath || '',
+                    content: buffer
+                });
+            }
+            await loadFilesFromDB();
+            showNotification("Importación exitosa", "fa-check");
+        }
+
+        function renderFileList() {
+            const tbody = document.getElementById('file-list-body');
+            if (!tbody) return;
+            if (state.filesInDB.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-12 text-center text-gray-400 italic">Sin archivos locales.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = state.filesInDB.map(file => `
+                <tr class="hover:bg-blue-50/10 dark:hover:bg-slate-700/30">
+                    <td class="px-6 py-4">
+                        <div class="flex items-center">
+                            <i class="${getFileIcon(file.name, file.type)} mr-3 text-blue-500"></i>
+                            <div>
+                                <div class="text-sm font-bold dark:text-gray-200">${file.name}</div>
+                                <div class="text-[10px] text-gray-400 font-mono">${file.webkitRelativePath || 'raíz'}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-xs font-mono text-gray-500 uppercase">${file.type.split('/')[1] || 'BIN'}</td>
+                    <td class="px-6 py-4 text-sm text-gray-500">${formatBytes(file.size)}</td>
+                    <td class="px-6 py-4 text-right">
+                        <button onclick="deleteFile(${file.id})" class="text-gray-400 hover:text-red-500 transition-colors"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // --- DEEP WEB CRAWLER LOGIC ---
+        async function refreshWebExplorer() {
+            const tbody = document.getElementById('web-file-list-body');
+            const stats = document.getElementById('web-scan-stats');
+            if (!tbody) return;
+
+            tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-20 text-center"><i class="fas fa-circle-notch fa-spin text-4xl text-purple-500 mb-4 block"></i><span class="dark:text-gray-400">Rastreando el DOM y la red...</span></td></tr>`;
+
+            const discovered = new Map();
+
+            const addResource = (url, type, source) => {
+                if (!url || url.startsWith('data:') || url.startsWith('blob:')) return;
+                try {
+                    const fullUrl = new URL(url, window.location.href).href;
+                    if (!discovered.has(fullUrl)) {
+                        discovered.set(fullUrl, {
+                            name: fullUrl.split('/').pop() || 'index',
+                            path: new URL(fullUrl).pathname,
+                            type: type,
+                            source: source,
+                            url: fullUrl
+                        });
+                    }
+                } catch(e) {}
+            };
+
+            document.querySelectorAll('script[src]').forEach(s => addResource(s.src, 'Script (JS)', 'DOM <script>'));
+            document.querySelectorAll('link[href]').forEach(l => addResource(l.href, 'Estilo/Link', 'DOM <link>'));
+            document.querySelectorAll('img[src]').forEach(i => addResource(i.src, 'Imagen', 'DOM <img>'));
+            document.querySelectorAll('a[href]').forEach(a => {
+                const href = a.getAttribute('href');
+                if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+                    const isDir = href.endsWith('/') || !href.includes('.');
+                    addResource(href, isDir ? 'Carpeta/Ruta' : 'Documento/Enlace', 'DOM <a>');
+                }
+            });
+
+            const currentPath = window.location.pathname;
+            const segments = currentPath.split('/').filter(Boolean);
+            let runningPath = window.location.origin;
+            segments.forEach(seg => {
+                runningPath += '/' + seg;
+                addResource(runningPath, 'Carpeta Padre', 'Path Analysis');
+            });
+
+            const commonDirs = ['assets', 'static', 'public', 'js', 'css', 'img', 'images', 'api', 'dist', 'src'];
+            for (const dir of commonDirs) {
+                try {
+                    const testUrl = new URL(dir + '/', window.location.href).href;
+                    const res = await fetch(testUrl, { method: 'HEAD' });
+                    if (res.ok) addResource(testUrl, 'Carpeta Detectada', 'Brute Force Scan');
+                } catch(e) {}
+            }
+
+            const results = Array.from(discovered.values());
+            stats.innerText = `${results.length} recursos encontrados`;
+
+            if (results.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-12 text-center text-gray-400 italic">No se pudieron extraer recursos automáticamente.</td></tr>`;
+            } else {
+                results.sort((a, b) => a.type.includes('Carpeta') ? -1 : 1);
+                tbody.innerHTML = results.map(res => {
+                    const isDir = res.type.includes('Carpeta');
+                    return `
+                    <tr class="hover:bg-purple-50/10 dark:hover:bg-purple-900/10 transition-colors">
+                        <td class="px-6 py-4">
+                            <div class="flex items-center">
+                                <i class="${isDir ? 'fas fa-folder text-yellow-500' : getFileIcon(res.name, '')} mr-3"></i>
+                                <div>
+                                    <div class="text-sm font-medium dark:text-gray-200 truncate max-w-xs">${res.name}</div>
+                                    <div class="text-[10px] text-gray-400 truncate max-w-xs font-mono">${res.path}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <span class="px-2 py-0.5 ${isDir ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'} text-[10px] font-bold rounded">
+                                ${res.type}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-[10px] text-gray-500 italic">${res.source}</td>
+                        <td class="px-6 py-4 text-right">
+                            <a href="${res.url}" target="_blank" class="text-gray-400 hover:text-purple-500 p-1"><i class="fas fa-external-link-alt"></i></a>
+                        </td>
+                    </tr>
+                `}).join('');
+            }
+        }
+
+        // --- DATABASE INSPECTOR LOGIC ---
+        function initDatabaseLogic() {
+            const grid = document.getElementById('db-tables-grid');
+            if (!grid) return;
+            const tables = ["config", "files"];
+            grid.innerHTML = tables.map(t => `
+                <button onclick="inspectTable('${t}')" class="p-4 bg-white dark:bg-darkCard border border-gray-200 dark:border-darkBorder rounded-xl text-left hover:border-green-500 transition-all group">
+                    <div class="flex items-center justify-between mb-1">
+                        <h4 class="font-bold text-green-500 group-hover:scale-105 transition-transform">${t}</h4>
+                        <i class="fas fa-table text-gray-300"></i>
+                    </div>
+                    <p class="text-xs text-gray-400">Ver registros de la tabla ${t}</p>
+                </button>
+            `).join('');
+        }
+
+        async function inspectTable(tableName) {
+            const inspector = document.getElementById('table-inspector');
+            const data = await db[tableName].toArray();
+            if (data.length === 0) {
+                inspector.innerHTML = `<p class="text-gray-400 text-center italic mt-10">La tabla '${tableName}' no tiene registros.</p>`;
+                return;
+            }
+            
+            // Filter keys to avoid displaying huge binary blobs in the inspector
+            const keys = Object.keys(data[0]).filter(k => k !== 'content');
+            
+            inspector.innerHTML = `
+                <div class="flex items-center justify-between mb-4 border-b dark:border-darkBorder pb-2">
+                    <h4 class="font-bold uppercase text-xs text-gray-500 tracking-wider">Tabla: ${tableName}</h4>
+                    <span class="text-[10px] bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">${data.length} filas</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead>
+                            <tr class="bg-gray-50 dark:bg-slate-900/50">
+                                ${keys.map(k => `<th class="py-2 px-3 border dark:border-darkBorder font-bold">${k}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.map(row => `
+                                <tr class="hover:bg-gray-50 dark:hover:bg-slate-800/30">
+                                    ${keys.map(k => `<td class="py-2 px-3 border dark:border-darkBorder truncate max-w-[200px]">${row[k]}</td>`).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        async function clearDatabase() {
+            if (confirm("¿Estás seguro de que deseas borrar todos los archivos locales? Esta acción es irreversible.")) {
+                await db.files.clear();
+                showNotification("Base de datos de archivos limpia", "fa-check");
+                if (state.currentView === 'explorer') await loadFilesFromDB();
+                if (state.currentView === 'database') inspectTable('files');
+            }
+        }
+
+        // --- GLOBAL UTILS ---
+        function getFileIcon(name = "", type = "") { 
+            const n = name.toLowerCase();
+            if (n.endsWith('.jpg') || n.endsWith('.png') || n.endsWith('.svg') || type.includes('image')) return 'fas fa-file-image text-green-500';
+            if (n.endsWith('.js') || type.includes('javascript')) return 'fab fa-js text-yellow-400';
+            if (n.endsWith('.css') || type.includes('css')) return 'fab fa-css3 text-blue-400';
+            if (n.endsWith('.html') || type.includes('html')) return 'fas fa-code text-orange-500';
+            if (n.endsWith('.pdf') || type.includes('pdf')) return 'fas fa-file-pdf text-red-500';
+            return 'fas fa-file text-gray-400'; 
+        }
+
+        function formatBytes(b) { 
+            if (b === 0) return '0 B'; 
+            const i = Math.floor(Math.log(b) / Math.log(1024)); 
+            return (b / Math.pow(1024, i)).toFixed(2) + ' ' + ['B', 'KB', 'MB', 'GB'][i]; 
+        }
+
+        async function deleteFile(id) { 
+            await db.files.delete(id); 
+            await loadFilesFromDB(); 
+            showNotification("Archivo eliminado permanentemente", "fa-trash"); 
+        }
+
+        function updateTheme(t) { 
+            state.theme = t; 
+            applyState(); 
+            saveConfig(); 
+        }
+
+        function applyState() { 
+            document.documentElement.classList.toggle('dark', state.theme === 'dark'); 
+        }
+
+        function showNotification(m, i) { 
+            const el = document.getElementById('app-notification'); 
+            document.getElementById('notif-message').innerText = m; 
+            document.getElementById('notif-icon').className = `fas ${i}`; 
+            el.classList.add('show'); 
+            setTimeout(() => el.classList.remove('show'), 3000); 
+        }
+
+        function toggleFullscreen() { 
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen(); 
+            else document.exitFullscreen(); 
+        }
+
+        window.onload = async () => { 
+            await loadConfig(); 
+            applyState(); 
+            setView(state.currentView || 'home'); 
+        };
+    </script>
+</body>
+</html>

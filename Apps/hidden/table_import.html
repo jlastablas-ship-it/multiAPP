@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML Analyzer & Exporter SPA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #e2e8f0; padding: 12px; text-align: left; }
+        th { background-color: #f1f5f9; font-weight: 600; color: #475569; }
+        tr:hover { background-color: #f8fafc; }
+        .btn-action { transition: all 0.2s; }
+        .btn-action:hover { transform: translateY(-1px); box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-6xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-800">HTML Database Analyzer</h1>
+                <p class="text-slate-500 text-sm">Analiza nodos, scripts y propiedades. Almacena en IndexedDB y exporta resultados.</p>
+            </div>
+            <div id="export-controls" class="hidden flex gap-2">
+                <button onclick="exportData('json')" class="btn-action bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
+                    Exportar JSON
+                </button>
+                <button onclick="exportData('csv')" class="btn-action bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
+                    Exportar CSV
+                </button>
+            </div>
+        </header>
+        
+        <!-- Zona de Carga -->
+        <div class="border-2 border-dashed border-slate-300 rounded-xl p-10 text-center mb-8 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer relative" id="drop-zone">
+            <input type="file" id="file-input" accept=".html" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+            <div class="flex flex-col items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-slate-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <p class="text-slate-600 font-medium">Carga un archivo HTML para analizar nodos y scripts</p>
+                <p class="text-slate-400 text-xs mt-1">Análisis profundo de HEAD, BODY y Funciones</p>
+            </div>
+        </div>
+
+        <div id="status-msg" class="hidden mb-4 p-3 rounded-lg text-sm font-medium"></div>
+
+        <div id="output" class="space-y-10">
+            <div class="text-center py-20 text-slate-400">
+                <p>Esperando carga de archivo...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('file-input');
+        const output = document.getElementById('output');
+        const exportControls = document.getElementById('export-controls');
+        const statusMsg = document.getElementById('status-msg');
+        let db;
+
+        // 1. Inicializar IndexedDB con 3 almacenes
+        const initDB = () => {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open("HtmlDeepAnalyzerDB", 3);
+                request.onupgradeneeded = (e) => {
+                    db = e.target.result;
+                    if (!db.objectStoreNames.contains("nodes")) db.createObjectStore("nodes", { autoIncrement: true });
+                    if (!db.objectStoreNames.contains("bodyTables")) db.createObjectStore("bodyTables", { autoIncrement: true });
+                    if (!db.objectStoreNames.contains("scripts")) db.createObjectStore("scripts", { autoIncrement: true });
+                };
+                request.onsuccess = (e) => { db = e.target.result; resolve(); };
+                request.onerror = () => reject("Error en DB");
+            });
+        };
+
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            showStatus("Analizando estructura completa...", "bg-blue-100 text-blue-700");
+
+            const text = await file.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(text, 'text/html');
+            
+            await clearDatabase();
+            await performDeepAnalysis(doc);
+            await renderAllTables();
+            
+            showStatus("Análisis completado y guardado en IndexedDB.", "bg-green-100 text-green-700");
+            exportControls.classList.remove('hidden');
+        });
+
+        async function performDeepAnalysis(doc) {
+            return new Promise((resolve) => {
+                const transaction = db.transaction(["nodes", "bodyTables", "scripts"], "readwrite");
+                
+                // --- ANALISIS DE NODOS (HEAD Y BODY) ---
+                const nodesStore = transaction.objectStore("nodes");
+                const bodyStore = transaction.objectStore("bodyTables");
+                
+                const mainSections = [
+                    { node: doc.head, label: 'HEAD' },
+                    { node: doc.body, label: 'BODY' }
+                ];
+
+                mainSections.forEach(sec => {
+                    if (!sec.node) return;
+                    
+                    // Nodo Padre (HEAD o BODY)
+                    nodesStore.add({
+                        Ubicacion: 'RAIZ',
+                        Etiqueta: sec.label,
+                        Atributos: getAttributesString(sec.node),
+                        Propiedades: `Hijos: ${sec.node.children.length} | ID: ${sec.node.id || 'N/A'}`
+                    });
+
+                    // Hijos directos
+                    Array.from(sec.node.children).forEach(child => {
+                        const attrs = getAttributesString(child);
+                        nodesStore.add({
+                            Ubicacion: sec.label,
+                            Etiqueta: child.tagName,
+                            Atributos: attrs,
+                            Propiedades: `Clases: ${child.className || 'Ninguna'} | Oculto: ${child.hidden}`
+                        });
+
+                        if (sec.label === 'BODY') {
+                            bodyStore.add({
+                                Tag: child.tagName,
+                                Atributos: attrs,
+                                Estilo: child.style.cssText || 'N/A',
+                                Texto: child.innerText.slice(0, 50).trim() || '(Sin texto)'
+                            });
+                        }
+                    });
+                });
+
+                // --- ANALISIS DE SCRIPTS Y FUNCIONES ---
+                const scriptsStore = transaction.objectStore("scripts");
+                const allScripts = doc.querySelectorAll('script');
+                const allElements = doc.querySelectorAll('*');
+
+                allScripts.forEach((script, idx) => {
+                    const content = script.textContent || script.src || "Script externo";
+                    // Encontrar nombres de funciones simples mediante Regex
+                    const funcMatches = content.match(/function\s+([a-zA-Z0-9_]+)/g) || [];
+                    const functionsFound = funcMatches.map(f => f.replace('function ', '')).join(', ') || 'Script lineal/Externo';
+
+                    // Buscar qué elementos usan este script (basado en atributos on*)
+                    const users = [];
+                    allElements.forEach(el => {
+                        const eventAttrs = Array.from(el.attributes).filter(a => a.name.startsWith('on'));
+                        if (eventAttrs.length > 0) {
+                            users.push(`${el.tagName}${el.id ? '#'+el.id : ''} (${eventAttrs.map(a => a.name).join(', ')})`);
+                        }
+                    });
+
+                    scriptsStore.add({
+                        ID: `Script #${idx + 1}`,
+                        Origen: script.src ? 'Externo' : 'Interno',
+                        Funciones: functionsFound,
+                        Elementos_Usuarios: [...new Set(users)].slice(0, 3).join(' | ') || 'Ninguno detectado'
+                    });
+                });
+
+                transaction.oncomplete = () => resolve();
+            });
+        }
+
+        function getAttributesString(el) {
+            return Array.from(el.attributes).map(a => `${a.name}="${a.value}"`).join('; ') || 'Ninguno';
+        }
+
+        async function clearDatabase() {
+            return new Promise((resolve) => {
+                const transaction = db.transaction(["nodes", "bodyTables", "scripts"], "readwrite");
+                transaction.objectStore("nodes").clear();
+                transaction.objectStore("bodyTables").clear();
+                transaction.objectStore("scripts").clear();
+                transaction.oncomplete = () => resolve();
+            });
+        }
+
+        async function renderAllTables() {
+            output.innerHTML = "";
+            const transaction = db.transaction(["nodes", "bodyTables", "scripts"], "readonly");
+
+            // 1. Tabla de Nodos (HEAD/BODY)
+            transaction.objectStore("nodes").getAll().onsuccess = (e) => {
+                createTableUI("HTML Nodes: HEAD & BODY", ["Ubicación", "Etiqueta", "Atributos", "Propiedades"], e.target.result);
+            };
+
+            // 2. Tabla de Scripts
+            transaction.objectStore("scripts").getAll().onsuccess = (e) => {
+                createTableUI("Scripts y Funciones Detectadas", ["ID", "Tipo", "Funciones", "Uso en Elementos"], e.target.result);
+            };
+
+            // 3. Tablas individuales de BODY
+            transaction.objectStore("bodyTables").getAll().onsuccess = (e) => {
+                if (e.target.result.length > 0) {
+                    const header = document.createElement('h2');
+                    header.className = "text-xl font-bold text-slate-800 mt-10 mb-4 border-l-4 border-blue-500 pl-3";
+                    header.textContent = "BODY Tables: Detalle de etiquetas padre";
+                    output.appendChild(header);
+
+                    e.target.result.forEach((item, i) => {
+                        createTableUI(`Etiqueta BODY #${i+1}: ${item.Tag}`, ["Propiedad", "Valor"], [
+                            { p: "Tag", v: item.Tag },
+                            { p: "Atributos", v: item.Atributos },
+                            { p: "Estilo Inline", v: item.Estilo },
+                            { p: "Contenido (Snippet)", v: item.Texto }
+                        ]);
+                    });
+                }
+            };
+        }
+
+        function createTableUI(title, headers, data) {
+            const container = document.createElement('div');
+            container.className = "mb-8 animate-in fade-in duration-500";
+            
+            const h = document.createElement('h3');
+            h.className = "text-sm font-bold text-slate-500 mb-2 uppercase flex items-center gap-2";
+            h.innerHTML = `<span>⚡</span> ${title}`;
+            
+            const scroll = document.createElement('div');
+            scroll.className = "table-container bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm";
+            
+            const table = document.createElement('table');
+            table.innerHTML = `
+                <thead><tr>${headers.map(text => `<th>${text}</th>`).join('')}</tr></thead>
+                <tbody>
+                    ${data.map(obj => `
+                        <tr>${Object.values(obj).map(val => `<td class="text-xs text-slate-600">${val}</td>`).join('')}</tr>
+                    `).join('')}
+                </tbody>
+            `;
+            
+            scroll.appendChild(table);
+            container.appendChild(h);
+            container.appendChild(scroll);
+            output.appendChild(container);
+        }
+
+        function showStatus(msg, classes) {
+            statusMsg.textContent = msg;
+            statusMsg.className = `mb-6 p-4 rounded-xl text-sm font-semibold shadow-sm ${classes}`;
+            statusMsg.classList.remove('hidden');
+        }
+
+        async function exportData(format) {
+            const transaction = db.transaction(["nodes", "bodyTables", "scripts"], "readonly");
+            const nodes = await new Promise(r => transaction.objectStore("nodes").getAll().onsuccess = e => r(e.target.result));
+            const body = await new Promise(r => transaction.objectStore("bodyTables").getAll().onsuccess = e => r(e.target.result));
+            const scripts = await new Promise(r => transaction.objectStore("scripts").getAll().onsuccess = e => r(e.target.result));
+
+            if (format === 'json') {
+                const data = { nodes, body_elements: body, scripts, timestamp: new Date().toISOString() };
+                downloadFile(JSON.stringify(data, null, 2), 'html_deep_analysis.json', 'application/json');
+            } else {
+                let csv = "Tipo,Col1,Col2,Col3,Col4\n";
+                nodes.forEach(n => csv += `NODO,${n.Ubicacion},${n.Etiqueta},"${n.Atributos.replace(/"/g, '""')}",${n.Propiedades}\n`);
+                scripts.forEach(s => csv += `SCRIPT,${s.ID},${s.Origen},${s.Funciones},"${s.Elementos_Usuarios}"\n`);
+                downloadFile(csv, 'html_analysis.csv', 'text/csv');
+            }
+        }
+
+        function downloadFile(content, name, type) {
+            const blob = new Blob([content], { type });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = name; a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        initDB();
+    </script>
+</body>
+</html>

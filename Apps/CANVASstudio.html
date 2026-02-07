@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diseñador Web Pro - Fix Arrastre</title>
+    
+    <!-- Tailwind CSS con soporte para modo oscuro por clase -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class'
+        }
+    </script>
+    
+    <!-- jQuery y jQuery UI -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
+
+    <!-- Template para la sección de configuración avanzada -->
+    <template id="config-template">
+        <div class="p-4 space-y-4 border-t border-slate-200 dark:border-slate-700">
+            <h2 class="text-[10px] font-bold text-slate-400 uppercase p-1">Configuración del Proyecto</h2>
+            
+            <div class="space-y-3">
+                <!-- Dimensiones del Canvas -->
+                <div>
+                    <label class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase">Dimensiones Canvas (px)</label>
+                    <div class="flex gap-2 mt-1">
+                        <input type="number" id="canvas-w" class="prop-input w-1/2 dark:text-white" placeholder="Ancho" value="1200">
+                        <input type="number" id="canvas-h" class="prop-input w-1/2 dark:text-white" placeholder="Alto" value="800">
+                    </div>
+                </div>
+
+                <!-- Estilos del Body del Iframe -->
+                <div>
+                    <label class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase">Clases Body Iframe (Tailwind)</label>
+                    <input type="text" id="iframe-body-class" class="prop-input mt-1 dark:text-white" placeholder="p-10 flex justify-center" value="p-0">
+                </div>
+
+                <!-- Modo Oscuro Global -->
+                <div class="flex items-center justify-between pt-2">
+                    <label class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase">Modo Oscuro App</label>
+                    <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                        <input type="checkbox" id="dark-mode-switch" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer border-slate-300"/>
+                        <label for="dark-mode-switch" class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-300 cursor-pointer"></label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <style>
+        body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        #canvas-container { 
+            background-image: radial-gradient(#cbd5e1 1px, transparent 1px); 
+            background-size: 20px 20px; 
+            position: relative; 
+            transition: all 0.2s;
+            width: 1200px;
+            height: 800px;
+            background-color: white;
+            box-shadow: 0 0 50px rgba(0,0,0,0.1);
+            margin: 40px;
+        }
+
+        .dark #canvas-container {
+            background-image: radial-gradient(#475569 1px, transparent 1px);
+        }
+
+        .canvas-element { 
+            position: absolute; 
+            min-width: 30px; 
+            min-height: 30px; 
+            border: 1px dashed #cbd5e1; 
+            display: inline-block;
+            box-sizing: border-box; 
+            background: rgba(255,255,255,0.01);
+            cursor: move;
+        }
+        
+        .canvas-element.selected { outline: 2px solid #3b82f6; border-style: solid; z-index: 100 !important; }
+        #canvas-container.selected { outline: 2px solid #3b82f6; outline-offset: -2px; }
+
+        .label-tag { 
+            font-size: 8px; 
+            color: #3b82f6; 
+            position: absolute; 
+            top: -14px; 
+            left: 0; 
+            font-weight: bold; 
+            background: white; 
+            padding: 0 4px; 
+            border: 1px solid #3b82f6; 
+            border-bottom: none; 
+            pointer-events: none; 
+            z-index: 10;
+        }
+        .dark .label-tag { background: #1e293b; border-color: #3b82f6; }
+
+        .tree-node { padding: 4px 8px; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 4px; font-size: 11px; color: #475569; position: relative; transition: all 0.1s; }
+        .dark .tree-node { color: #94a3b8; }
+        .tree-node:hover { background: #f1f5f9; }
+        .dark .tree-node:hover { background: #334155; }
+        .tree-node.active { background: #3b82f6; color: white; }
+        .tree-children { margin-left: 12px; border-left: 1px solid #e2e8f0; padding-left: 4px; }
+        .dark .tree-children { border-left-color: #334155; }
+        
+        .tab-btn { color: #64748b; }
+        .tab-btn.active { border-bottom: 2px solid #3b82f6; color: #3b82f6; background: #f8fafc; }
+        .dark .tab-btn.active { background: #0f172a; color: #3b82f6; }
+        
+        footer { height: 260px; }
+        .prop-input { width: 100%; background: transparent; border-bottom: 1px solid #e2e8f0; outline: none; padding: 2px; font-size: 12px; }
+        .dark .prop-input { border-bottom-color: #334155; }
+        
+        .preview-frame-container {
+            padding: 20px;
+            background-color: #f1f5f9;
+            height: 100%;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .dark .preview-frame-container { background-color: #0f172a; }
+        
+        .preview-window {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .dark .preview-window { background: #1e293b; border-color: #334155; }
+
+        .preview-header {
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            shrink-0;
+        }
+        .dark .preview-header { background: #0f172a; border-bottom-color: #334155; }
+
+        .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+        #zoom-btn {
+            margin-left: auto;
+            background: #e2e8f0;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            color: #475569;
+            transition: all 0.2s;
+        }
+        .dark #zoom-btn { background: #334155; color: #94a3b8; }
+        #zoom-btn:hover { background: #cbd5e1; }
+        #zoom-btn.active { background: #3b82f6; color: white; }
+
+        .render-switch {
+            display: flex;
+            align-items: center;
+            background: #1e293b;
+            padding: 2px;
+            border-radius: 20px;
+            gap: 4px;
+        }
+        .render-switch button {
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 9px;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .render-switch .btn-auto.active { background: #10b981; color: white; }
+        .render-switch .btn-manual.active { background: #f59e0b; color: white; }
+        .render-switch button:not(.active) { color: #64748b; }
+
+        /* Toggle Custom Styles */
+        .toggle-checkbox:checked { right: 0; border-color: #3b82f6; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #3b82f6; }
+        .toggle-checkbox { right: 4px; transition: all 0.3s; }
+
+        /* Estilo para las guías de redimensionamiento */
+        .ui-resizable-handle { background: transparent; }
+        .selected .ui-resizable-se { width: 10px; height: 10px; background: #3b82f6; border-radius: 2px; bottom: -5px; right: -5px; }
+    </style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-200 transition-colors duration-300">
+
+    <header class="bg-slate-900 text-white p-3 flex justify-between items-center shrink-0 border-b border-slate-800">
+        <div class="flex items-center gap-4">
+            <h1 class="text-sm font-bold tracking-tight">CANVAS STUDIO <span class="text-blue-400">PRO</span></h1>
+            
+            <div class="render-switch">
+                <button id="render-auto" class="btn-auto active" onclick="setRenderMode('auto')">AUTO</button>
+                <button id="render-manual" class="btn-manual" onclick="setRenderMode('manual')">MANUAL</button>
+            </div>
+        </div>
+
+        <div class="flex gap-2">
+            <button id="btn-force-update" onclick="forceUpdate()" class="bg-blue-600 px-3 py-1 rounded text-[10px] font-bold uppercase hover:bg-blue-500 transition-colors flex items-center gap-1">
+                <span>Actualizar</span>
+                <span id="manual-indicator" class="hidden w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></span>
+            </button>
+            <button onclick="location.reload()" class="bg-red-600 px-3 py-1 rounded text-[10px] font-bold uppercase hover:bg-red-500 transition-colors">Reiniciar</button>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        <nav class="bg-white dark:bg-slate-900 border-r dark:border-slate-800 w-64 flex flex-col shrink-0 overflow-y-auto" id="side-nav">
+            <div class="p-4 space-y-2 border-b dark:border-slate-800">
+                <h2 class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase p-1">Componentes</h2>
+                <div class="component-template flex items-center gap-3 bg-slate-50 dark:bg-slate-800 p-3 rounded border border-slate-200 dark:border-slate-700 cursor-grab hover:border-blue-400 active:scale-95 transition-all" data-type="div">
+                    <span class="text-xs font-medium text-slate-600 dark:text-slate-300">Contenedor (Div)</span>
+                </div>
+                <div class="component-template flex items-center gap-3 bg-slate-50 dark:bg-slate-800 p-3 rounded border border-slate-200 dark:border-slate-700 cursor-grab hover:border-blue-400 active:scale-95 transition-all" data-type="button">
+                    <span class="text-xs font-medium text-slate-600 dark:text-slate-300">Botón</span>
+                </div>
+                <div class="component-template flex items-center gap-3 bg-slate-50 dark:bg-slate-800 p-3 rounded border border-slate-200 dark:border-slate-700 cursor-grab hover:border-blue-400 active:scale-95 transition-all" data-type="p">
+                    <span class="text-xs font-medium text-slate-600 dark:text-slate-300">Párrafo</span>
+                </div>
+            </div>
+
+            <div class="p-4 space-y-4">
+                <h2 class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase p-1">Estética Rápida</h2>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase">Fondo del Canvas</label>
+                        <input type="color" id="canvas-bg-input" class="h-8 w-full rounded cursor-pointer border-none mt-1 bg-transparent" value="#ffffff">
+                    </div>
+                </div>
+            </div>
+
+            <div id="dynamic-config-area"></div>
+        </nav>
+
+        <main class="flex-1 flex flex-col overflow-hidden">
+            <div class="flex-1 flex overflow-hidden">
+                <section class="flex-1 overflow-auto relative bg-slate-200 dark:bg-slate-800 flex justify-center items-start">
+                    <div id="canvas-container"></div>
+                </section>
+
+                <section class="w-80 bg-white dark:bg-slate-900 border-l dark:border-slate-800 flex flex-col shrink-0">
+                    <div class="flex border-b dark:border-slate-800 text-center">
+                        <button class="tab-btn flex-1 py-3 text-[10px] font-bold active transition-colors" data-tab="tab-tree">ÁRBOL</button>
+                        <button class="tab-btn flex-1 py-3 text-[10px] font-bold transition-colors" data-tab="tab-preview">VISTA PREVIA</button>
+                    </div>
+
+                    <div id="tab-tree" class="tab-content flex-1 overflow-y-auto p-4">
+                        <div id="tree-root"></div>
+                    </div>
+
+                    <div id="tab-preview" class="tab-content flex-1 hidden overflow-hidden">
+                        <div class="preview-frame-container">
+                            <div class="preview-window">
+                                <div class="preview-header">
+                                    <div class="dot bg-red-400"></div>
+                                    <div class="dot bg-yellow-400"></div>
+                                    <div class="dot bg-green-400"></div>
+                                    <button id="zoom-btn" title="Auto Zoom / Restaurar">
+                                        🔍 <span id="zoom-text">FIT</span>
+                                    </button>
+                                </div>
+                                <div class="flex-1 relative overflow-hidden bg-white">
+                                    <iframe id="preview-iframe" class="w-full h-full border-none absolute top-0 left-0"></iframe>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <footer class="bg-white dark:bg-slate-900 border-t dark:border-slate-800 grid grid-cols-3 shrink-0">
+                <div class="p-4 border-r dark:border-slate-800 overflow-y-auto" id="style-props"></div>
+                <div class="p-4 border-r dark:border-slate-800 overflow-y-auto" id="layout-props"></div>
+                <div class="p-4 overflow-y-auto" id="attr-props"></div>
+            </footer>
+        </main>
+    </div>
+
+    <script>
+        let selectedElementId = 'canvas-container';
+        let isZoomed = false;
+        let renderMode = 'auto'; 
+        const $canvas = $('#canvas-container');
+
+        function renderTemplateConfig() {
+            const template = document.getElementById('config-template');
+            const clone = template.content.cloneNode(true);
+            document.getElementById('dynamic-config-area').appendChild(clone);
+
+            $('#canvas-w').on('input', function() { $canvas.css('width', $(this).val() + 'px'); sync(); });
+            $('#canvas-h').on('input', function() { $canvas.css('height', $(this).val() + 'px'); sync(); });
+            $('#iframe-body-class').on('input', function() { sync(); });
+            
+            $('#dark-mode-switch').on('change', function() {
+                if(this.checked) {
+                    $('html').addClass('dark');
+                } else {
+                    $('html').removeClass('dark');
+                }
+            });
+        }
+
+        function setRenderMode(mode) {
+            renderMode = mode;
+            $('.render-switch button').removeClass('active');
+            if (mode === 'auto') {
+                $('#render-auto').addClass('active');
+                $('#manual-indicator').addClass('hidden');
+                sync();
+            } else {
+                $('#render-manual').addClass('active');
+            }
+        }
+
+        function forceUpdate() {
+            updateTree();
+            updatePreviewFromCode();
+            $('#manual-indicator').addClass('hidden');
+        }
+
+        function updateTree() {
+            const $treeRoot = $('#tree-root').empty();
+            function renderNode($el, $container) {
+                const id = $el.attr('id') || 'canvas-container';
+                const tag = $el.hasClass('canvas-element') ? $el.find('.label-tag').first().text() : 'CANVAS';
+                const $node = $(`<div class="tree-node ${selectedElementId === id ? 'active' : ''}" data-id="${id}">${tag} <span class="ml-auto opacity-30 text-[8px]">#${id.slice(-4)}</span></div>`);
+                $node.on('click', (e) => { e.stopPropagation(); selectElement(id); });
+                $container.append($node);
+                
+                $el.children('.canvas-element').each(function() {
+                    const $childContainer = $('<div class="tree-children"></div>');
+                    $container.append($childContainer);
+                    renderNode($(this), $childContainer);
+                });
+            }
+            renderNode($canvas, $treeRoot);
+        }
+
+        function updatePreviewFromCode() {
+            const $clone = $canvas.clone();
+            const canvasWidth = $canvas.width();
+            const canvasHeight = $canvas.height();
+            const canvasBg = $canvas.css('background-color');
+            const bodyClasses = $('#iframe-body-class').val() || '';
+            
+            function cleanForPreview($original, $cloned) {
+                $cloned.css({
+                    'position': $original.css('position'),
+                    'left': $original.css('left'),
+                    'top': $original.css('top'),
+                    'width': $original.css('width'),
+                    'height': $original.css('height'),
+                    'background-color': $original.css('background-color'),
+                    'border-radius': $original.css('border-radius'),
+                    'border': 'none',
+                    'box-shadow': 'none',
+                    'background-image': 'none'
+                });
+
+                $cloned.removeClass('selected ui-droppable ui-resizable ui-draggable ui-draggable-handle');
+                $cloned.find('> .ui-resizable-handle, > .label-tag').remove();
+
+                $original.children('.canvas-element').each(function(i) {
+                    cleanForPreview($(this), $cloned.children('.canvas-element').eq(i));
+                });
+            }
+
+            cleanForPreview($canvas, $clone);
+            
+            $clone.css({
+                'position': 'relative',
+                'width': canvasWidth + 'px',
+                'height': canvasHeight + 'px',
+                'margin': '0',
+                'top': '0',
+                'left': '0',
+                'transform-origin': 'top left'
+            });
+
+            const htmlContent = $clone[0].outerHTML;
+            const $iframe = $('#preview-iframe');
+            const doc = $iframe[0].contentWindow.document;
+            
+            doc.open();
+            doc.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <script src="https://cdn.tailwindcss.com"><\/script>
+                    <style>
+                        * { box-sizing: border-box; }
+                        html, body { 
+                            margin: 0; 
+                            padding: 0; 
+                            width: 100%; 
+                            min-height: 100%; 
+                            background-color: ${canvasBg};
+                        }
+                        .canvas-element { 
+                            position: absolute !important; 
+                            border: none !important; 
+                            outline: none !important; 
+                        }
+                        #canvas-container { 
+                            position: relative !important; 
+                            width: ${canvasWidth}px !important;
+                            height: ${canvasHeight}px !important;
+                            transform-origin: 0 0;
+                            transition: transform 0.3s ease-out;
+                            background-color: transparent !important;
+                        }
+                    </style>
+                </head>
+                <body class="${bodyClasses}">
+                    ${htmlContent}
+                </body>
+                </html>
+            `);
+            doc.close();
+
+            if(isZoomed) {
+                setTimeout(applyAutoZoom, 50); 
+            }
+        }
+
+        function applyAutoZoom() {
+            const $iframe = $('#preview-iframe');
+            const $iframeDoc = $iframe.contents();
+            const $content = $iframeDoc.find('#canvas-container');
+            
+            if(!$content.length) return;
+
+            const containerWidth = $iframe.parent().width();
+            const containerHeight = $iframe.parent().height();
+            const contentWidth = $canvas.width();
+            const contentHeight = $canvas.height();
+
+            if (isZoomed) {
+                const scaleX = containerWidth / contentWidth;
+                const scaleY = containerHeight / contentHeight;
+                const scale = Math.min(scaleX, scaleY, 0.95);
+
+                $content.css({
+                    'transform': `scale(${scale})`,
+                    'width': contentWidth + 'px',
+                    'height': contentHeight + 'px'
+                });
+                $iframeDoc.find('body').css('overflow', 'hidden');
+                $('#zoom-btn').addClass('active').find('#zoom-text').text('100%');
+            } else {
+                $content.css('transform', 'scale(1)');
+                $iframeDoc.find('body').css('overflow', 'auto');
+                $('#zoom-btn').removeClass('active').find('#zoom-text').text('FIT');
+            }
+        }
+
+        function selectElement(id) {
+            selectedElementId = id;
+            $('.canvas-element, #canvas-container').removeClass('selected');
+            const $target = id === 'canvas-container' ? $canvas : $('#' + id);
+            $target.addClass('selected');
+            updateInspector($target);
+            updateTree();
+        }
+
+        function updateInspector($wrapper) {
+            const isCanvas = $wrapper.attr('id') === 'canvas-container';
+            const $el = isCanvas ? $wrapper : $wrapper.children().not('.ui-resizable-handle, .label-tag').first();
+            $('#style-props, #layout-props, #attr-props').empty();
+            
+            const addProp = (cont, label, prop, target) => {
+                const $row = $(`<div class="mb-2"><label class="text-[9px] uppercase text-slate-400 dark:text-slate-500 font-bold">${label}</label><input class="prop-input dark:text-white" value="${target.css(prop)}"></div>`);
+                $row.find('input').on('input', function() { 
+                    target.css(prop, $(this).val()); 
+                    sync(); 
+                });
+                $(cont).append($row);
+            };
+
+            addProp('#style-props', 'Fondo', 'background-color', $el);
+            addProp('#style-props', 'Borde (Radius)', 'border-radius', $el);
+
+            if(!isCanvas) {
+                addProp('#layout-props', 'Top', 'top', $wrapper);
+                addProp('#layout-props', 'Left', 'left', $wrapper);
+                addProp('#layout-props', 'Ancho', 'width', $wrapper);
+                addProp('#layout-props', 'Alto', 'height', $wrapper);
+                
+                const $textRow = $(`<div class="mb-2"><label class="text-[9px] uppercase text-slate-400 dark:text-slate-500 font-bold">Texto / Contenido</label><input class="prop-input dark:text-white" value="${$el.text()}"></div>`);
+                $textRow.find('input').on('input', function() { 
+                    $el.text($(this).val()); 
+                    sync(); 
+                });
+                $('#attr-props').append($textRow);
+            }
+        }
+
+        function makeDroppable($target) {
+            // Limpiar si ya era droppable
+            if ($target.data('ui-droppable')) $target.droppable('destroy');
+            
+            $target.droppable({
+                greedy: true,
+                accept: ".component-template, .canvas-element",
+                tolerance: "pointer",
+                drop: function(e, ui) {
+                    const $container = $(this);
+                    
+                    // Si viene de la barra lateral (nuevo componente)
+                    if (ui.draggable.hasClass('component-template')) {
+                        const type = ui.draggable.data('type');
+                        const x = ui.offset.left - $container.offset().left + $container.scrollLeft();
+                        const y = ui.offset.top - $container.offset().top + $container.scrollTop();
+                        const $new = createElement(type, x, y);
+                        $container.append($new);
+                        initElement($new);
+                    } 
+                    // Si es un componente existente moviéndose
+                    else {
+                        const $moving = ui.draggable;
+                        const x = ui.offset.left - $container.offset().left + $container.scrollLeft();
+                        const y = ui.offset.top - $container.offset().top + $container.scrollTop();
+                        
+                        // Detach y re-append para cambiar de padre
+                        $moving.detach().appendTo($container).css({ left: x, top: y });
+                        
+                        // RE-INICIALIZAR es clave porque jQuery UI pierde el rastro tras el detach
+                        initElement($moving);
+                    }
+                    sync();
+                }
+            });
+        }
+
+        function initElement($el) {
+            // 1. Limpiar instancias previas para evitar duplicados/errores
+            if ($el.data('ui-draggable')) $el.draggable('destroy');
+            if ($el.data('ui-resizable')) $el.resizable('destroy');
+            
+            // 2. Re-habilitar Arrastre
+            $el.draggable({ 
+                containment: "parent", 
+                stack: ".canvas-element",
+                stop: function() {
+                    sync();
+                }
+            });
+
+            // 3. Re-habilitar Redimensión
+            $el.resizable({ 
+                containment: "parent", 
+                handles: "all", 
+                stop: function() { 
+                    // Ajustar el hijo interno para que llene el wrapper
+                    $(this).children().not('.ui-resizable-handle, .label-tag').first().css({width:'100%', height:'100%'}); 
+                    sync(); 
+                } 
+            });
+
+            // 4. Delegación de clics
+            $el.off('mousedown').on('mousedown', function(e) { 
+                e.stopPropagation(); 
+                selectElement($(this).attr('id')); 
+            });
+            
+            // 5. Si es un contenedor, debe ser capaz de recibir otros elementos
+            if ($el.find('.label-tag').text() === 'div') {
+                makeDroppable($el);
+            }
+        }
+
+        function createElement(type, x, y) {
+            const id = 'el-' + Math.random().toString(36).substr(2, 5);
+            // El wrapper interactivo
+            const $wrapper = $(`<div class="canvas-element" id="${id}" style="left:${x}px; top:${y}px; width:150px; height:80px;"><span class="label-tag">${type}</span></div>`);
+            
+            let inner = "";
+            if(type === 'div') {
+                inner = `<div class="w-full h-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 flex items-center justify-center text-[10px] text-slate-300 pointer-events-none">Contenedor</div>`;
+            } else if(type === 'button') {
+                inner = `<button class="w-full h-full bg-blue-600 text-white font-bold rounded shadow-sm pointer-events-none">BOTÓN</button>`;
+            } else if(type === 'p') {
+                inner = `<p class="w-full h-full p-2 text-xs pointer-events-none dark:text-slate-200">Párrafo...</p>`;
+            }
+            
+            $wrapper.append(inner);
+            return $wrapper;
+        }
+
+        function sync() {
+            if (renderMode === 'auto') {
+                updateTree();
+                updatePreviewFromCode();
+            } else {
+                $('#manual-indicator').removeClass('hidden');
+                updateTree();
+            }
+        }
+
+        $(document).ready(() => {
+            renderTemplateConfig();
+            
+            // Configurar barra lateral
+            $(".component-template").draggable({ 
+                helper: "clone", 
+                appendTo: "body", 
+                zIndex: 1000 
+            });
+
+            // Configurar canvas principal
+            makeDroppable($canvas);
+            
+            $canvas.on('mousedown', (e) => {
+                if(e.target === $canvas[0]) selectElement('canvas-container');
+            });
+
+            $('#canvas-bg-input').on('input', function() { 
+                $canvas.css('background-color', $(this).val()); 
+                sync(); 
+            });
+
+            $('.tab-btn').on('click', function() {
+                $('.tab-btn').removeClass('active');
+                $(this).addClass('active');
+                $('.tab-content').addClass('hidden');
+                $(`#${$(this).data('tab')}`).removeClass('hidden');
+                if($(this).data('tab') === 'tab-preview' && renderMode === 'auto') updatePreviewFromCode();
+            });
+
+            $('#zoom-btn').on('click', function() {
+                isZoomed = !isZoomed;
+                applyAutoZoom();
+            });
+
+            forceUpdate();
+            selectElement('canvas-container');
+        });
+    </script>
+</body>
+</html>

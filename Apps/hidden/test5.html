@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coding Partner - App Studio MDI</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
+    
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- PLANTILLAS DE SECCIONES (TEMPLATES) -->
+    <template id="tpl-arrays">
+        <script id="schema-data" type="application/json">
+            {
+                "usuarios": [
+                    { "id": 1, "nombre": "Admin Central", "rol": "Superuser" },
+                    { "id": 2, "nombre": "Editor Contenido", "rol": "Staff" }
+                ],
+                "productos": [
+                    { "id": 101, "item": "Laptop Pro 16", "stock": 15 },
+                    { "id": 102, "item": "Monitor 4K Ultra", "stock": 8 }
+                ],
+                "nav_elements": [
+                    { "section": "Herramientas", "label": "Dashboard", "icon": "🏠", "view": "dashboard" },
+                    { "section": "Herramientas", "label": "Tareas", "icon": "📋", "view": "tasks" },
+                    { "section": "Sistema", "label": "Database", "icon": "🗄️", "view": "database" },
+                    { "section": "Sistema", "label": "Configuración", "icon": "⚙️", "view": "config" }
+                ],
+                "header_elements": [
+                    { "label": "Menú", "icon": "☰", "action": "toggle-nav", "position": "left" },
+                    { "label": "Pantalla Completa", "icon": "⛶", "action": "fullscreen", "position": "end" },
+                    { "label": "Información", "icon": "ℹ", "action": "toggle-aside", "position": "end" }
+                ],
+                "window_buttons": [
+                    { "label": "Minimalista", "icon": "🔳", "action": "toggle-header", "class": "win-btn-toggle" },
+                    { "label": "Minimizar", "icon": "—", "action": "minimize", "class": "" },
+                    { "label": "Maximizar", "icon": "🗖", "action": "maximize", "class": "" },
+                    { "label": "Cerrar", "icon": "&times;", "action": "close", "class": "win-btn-close" }
+                ],
+                "window_config": [
+                    { "id": 1, "width": 420, "height": 300, "position": "cascade" }
+                ],
+                "actions_registry": [
+                    { "component": "NAV", "action": "open-window", "code": "app.createWindow(viewId, title)", "params": "viewId, title", "desc": "Crea una ventana MDI" },
+                    { "component": "HEADER", "action": "toggle-nav", "code": "ui.togglePanel('nav')", "params": "id: 'nav'", "desc": "Colapsa barra lateral" },
+                    { "component": "CONFIG", "action": "toggle-theme", "code": "ui.toggleTheme()", "params": "none", "desc": "Cambia Light/Dark" }
+                ]
+            }
+        </script>
+    </template>
+
+    <template id="tpl-dashboard">
+        <div class="p-2">
+            <h5>Dashboard</h5>
+            <div class="alert alert-success p-2 small" id="db-alert-indicator">DB Conectada dinámicamente</div>
+            <div id="db-active-label" class="badge bg-primary mb-2"></div>
+        </div>
+    </template>
+
+    <template id="tpl-tasks">
+        <div class="p-2">
+            <h6>Gestión de Tareas</h6>
+            <div class="input-group input-group-sm mb-2">
+                <input type="text" id="taskInput" class="form-control" placeholder="Nueva tarea...">
+                <button class="btn btn-primary" onclick="app.addTask()">+</button>
+            </div>
+            <ul id="task-list-container" class="list-group list-group-flush small" style="max-height: 200px; overflow-y: auto;"></ul>
+        </div>
+    </template>
+
+    <template id="tpl-database">
+        <div class="h-100 d-flex flex-column">
+            <div class="sticky-top bg-white pb-2" id="db-sticky-header" style="z-index: 100;">
+                <ul class="nav nav-tabs px-2 pt-2 x-small border-0" id="dbTabs" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active py-1" data-bs-toggle="tab" data-bs-target="#tpl-db-pane" type="button" onclick="app.renderTemplateData()">Plantillas (JSON)</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link py-1" data-bs-toggle="tab" data-bs-target="#real-db-pane" type="button" onclick="app.refreshDatabaseView()">Base de Datos (Live)</button>
+                    </li>
+                </ul>
+                <div class="px-2 mt-2">
+                    <div id="tpl-controls" class="tab-specific-control">
+                        <button class="btn btn-sm btn-outline-primary w-100 x-small" onclick="app.renderTemplateData()">Refrescar Vista de Plantillas</button>
+                    </div>
+                    <div id="real-controls" class="tab-specific-control d-none">
+                        <button class="btn btn-sm btn-warning w-100 x-small" onclick="app.resetDatabaseFromTemplate()">Resetear DB desde Plantilla</button>
+                    </div>
+                </div>
+                <hr class="my-2 mx-2">
+            </div>
+            <div class="flex-grow-1 overflow-auto px-2 pb-2">
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="tpl-db-pane"><div id="template-data-view"></div></div>
+                    <div class="tab-pane fade" id="real-db-pane"><div id="live-db-tables-view"></div></div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="tpl-config">
+        <div class="p-2 pt-0 h-100 d-flex flex-column">
+            <div class="sticky-top bg-white" id="config-sticky-header" style="z-index:100">
+                <ul class="nav nav-tabs mb-2 x-small border-0 pt-2" id="configTabs" role="tablist">
+                    <li class="nav-item"><button class="nav-link active py-1" data-bs-toggle="tab" data-bs-target="#pref-pane" type="button" onclick="app.loadWinPrefs()">PREF</button></li>
+                    <li class="nav-item"><button class="nav-link py-1" data-bs-toggle="tab" data-bs-target="#nav-pane" type="button">NAV</button></li>
+                    <li class="nav-item"><button class="nav-link py-1" data-bs-toggle="tab" data-bs-target="#header-pane" type="button">HEADER</button></li>
+                    <li class="nav-item"><button class="nav-link py-1" data-bs-toggle="tab" data-bs-target="#winbtns-pane" type="button">BOTONES</button></li>
+                    <li class="nav-item"><button class="nav-link py-1" data-bs-toggle="tab" data-bs-target="#actions-pane" type="button">ACCIONES</button></li>
+                </ul>
+                <hr class="my-0 mb-2">
+            </div>
+            <div class="flex-grow-1 overflow-auto pb-2">
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="pref-pane">
+                        <section class="mb-4">
+                            <h6 class="fw-bold x-small text-muted text-uppercase mb-2 section-title-label">Entorno de Datos</h6>
+                            <div class="mb-3">
+                                <label class="x-small text-muted form-label-text">Base de Datos Activa</label>
+                                <select id="db-selector" class="form-select form-select-sm" onchange="app.changeDatabase(this.value)">
+                                    <option value="AppStudioDB_Prod">Producción (Principal)</option>
+                                    <option value="AppStudioDB_Test">Pruebas (Beta)</option>
+                                    <option value="AppStudioDB_Dev">Desarrollo (Local)</option>
+                                </select>
+                                <div class="x-small text-muted mt-1 help-text">Cambiar de base de datos reiniciará la navegación.</div>
+                            </div>
+
+                            <h6 class="fw-bold x-small text-muted text-uppercase mb-2 section-title-label">Apariencia</h6>
+                            <div class="form-check form-switch small mb-3">
+                                <input class="form-check-input" type="checkbox" id="themeSwitch" onclick="ui.toggleTheme()">
+                                <label class="form-check-label theme-label-text" for="themeSwitch">Modo Oscuro</label>
+                            </div>
+                        </section>
+                        
+                        <section id="win-config-controls">
+                            <h6 class="fw-bold x-small text-muted text-uppercase mb-2 section-title-label">Dimensiones de Ventana</h6>
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <label class="x-small text-muted form-label-text">Ancho (px)</label>
+                                    <input type="number" id="win-pref-width" class="form-control form-control-sm" onchange="app.saveWinPrefs()">
+                                </div>
+                                <div class="col-6">
+                                    <label class="x-small text-muted form-label-text">Alto (px)</label>
+                                    <input type="number" id="win-pref-height" class="form-control form-control-sm" onchange="app.saveWinPrefs()">
+                                </div>
+                            </div>
+                            <h6 class="fw-bold x-small text-muted text-uppercase mb-2 section-title-label">Comportamiento</h6>
+                            <div class="mb-3">
+                                <label class="x-small text-muted form-label-text">Posicionamiento Inicial</label>
+                                <select id="win-pref-pos" class="form-select form-select-sm" onchange="app.saveWinPrefs()">
+                                    <option value="cascade">Cascada (Incremental)</option>
+                                    <option value="center">Centro del Contenedor</option>
+                                    <option value="fixed">Fijo (Esquina Superior)</option>
+                                </select>
+                            </div>
+                        </section>
+                    </div>
+                    <div class="tab-pane fade" id="nav-pane"><div id="nav-db-table-container"></div></div>
+                    <div class="tab-pane fade" id="header-pane"><div id="header-db-table-container"></div></div>
+                    <div class="tab-pane fade" id="winbtns-pane"><div id="win-btn-table-container"></div></div>
+                    <div class="tab-pane fade" id="actions-pane"><div id="actions-registry-table-container"></div></div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <style>
+        :root { --sidebar-width: 240px; --sidebar-collapsed-width: 70px; --aside-width: 280px; --transition-speed: 0.3s; }
+        body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; font-family: 'Segoe UI', sans-serif; transition: background-color var(--transition-speed); }
+        #header { height: 60px; z-index: 1030; }
+        #footer { height: 40px; z-index: 1030; }
+        #wrapper { display: flex; flex: 1; overflow: hidden; position: relative; }
+        
+        #nav-panel { 
+            width: var(--sidebar-width); 
+            transition: width var(--transition-speed); 
+            border: 1px solid #dee2e6; 
+            background: #f8f9fa; 
+            z-index: 1020; 
+            overflow-x: hidden; 
+            display: flex; 
+            flex-direction: column;
+            margin: 3px;
+            border-radius: 8px;
+        }
+        #nav-panel.collapsed { width: var(--sidebar-collapsed-width); }
+        
+        .nav-section-container { padding: 10px; transition: padding var(--transition-speed); }
+        #nav-panel.collapsed .nav-section-container { padding: 10px 5px; }
+        
+        .nav-section-title { transition: opacity var(--transition-speed), height var(--transition-speed); color: #6c757d; }
+        #nav-panel.collapsed .nav-section-title { opacity: 0; height: 0; overflow: hidden; margin: 0 !important; }
+
+        .nav-link { cursor: pointer; color: #495057; display: flex; align-items: center; padding: 8px; text-decoration: none; border-radius: 4px; white-space: nowrap; overflow: hidden; }
+        .nav-link:hover { background: rgba(0,0,0,0.05); }
+        .nav-link.active { background: #e7f1ff; color: #0d6efd; font-weight: 500; }
+        .nav-link.disabled { opacity: 0.5; pointer-events: none; background: #eee; }
+        
+        .nav-icon { min-width: 24px; text-align: center; margin-right: 10px; transition: margin var(--transition-speed); }
+        #nav-panel.collapsed .nav-icon { margin-right: 0; width: 100%; font-size: 1.2rem; }
+        
+        .nav-label { transition: opacity var(--transition-speed); }
+        #nav-panel.collapsed .nav-label { opacity: 0; width: 0; display: none; }
+
+        #aside-panel { width: var(--aside-width); transition: margin-right var(--transition-speed); border-left: 1px solid #dee2e6; background: #f8f9fa; z-index: 1020; overflow-y: auto; }
+        #aside-panel.collapsed { margin-right: calc(var(--aside-width) * -1); }
+        #main-content { flex: 1; position: relative; background: #e9ecef; overflow: hidden; }
+        
+        .app-window { position: absolute; width: 420px; min-height: 200px; background: white; border: 1px solid #adb5bd; border-radius: 6px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; z-index: 100; }
+        .app-window.maximized { top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; border-radius: 0; }
+        .app-window.minimized { min-height: 40px !important; height: 40px !important; width: 200px !important; }
+        .app-window.minimized .window-body { display: none; }
+        .app-window.no-header .window-header { display: none; }
+        .app-window.no-header { border-top: 4px solid #0d6efd; }
+        .window-header { background: #f1f3f5; padding: 8px 12px; cursor: move; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #dee2e6; user-select: none; min-height: 40px; }
+        .window-controls { display: flex !important; flex-direction: row !important; align-items: center; gap: 4px; white-space: nowrap; }
+        .window-body { flex: 1; overflow: hidden; background: white; position: relative; }
+        .win-btn { border: none; background: none; font-size: 0.85rem; color: #6c757d; cursor: pointer; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
+        .win-btn:hover { background-color: rgba(0,0,0,0.08); }
+        .win-btn-close:hover { background-color: #dc3545; color: white; }
+        
+        .win-list-item { cursor: pointer; transition: all 0.2s; border-radius: 4px; }
+        .win-list-item:hover { background: #e7f1ff; }
+        .win-list-item.selected { background: #0d6efd; color: white !important; }
+        .stats-card { background: white; border: 1px solid #dee2e6; border-radius: 4px; padding: 8px; margin-top: 8px; }
+        
+        .collapsible-header { cursor: pointer; background-color: rgba(0,0,0,0.03); transition: background 0.2s; user-select: none; border-bottom: 1px solid rgba(0,0,0,0.05); }
+        .collapse-icon { transition: transform 0.3s; display: inline-block; margin-right: 8px; font-size: 0.6rem; transform: rotate(-90deg); }
+        .collapsible-header:not(.collapsed) .collapse-icon { transform: rotate(0deg); }
+        
+        /* Dark Mode Corrections */
+        body.dark-mode { background-color: #1a1d21; color: #e9ecef; }
+        body.dark-mode #header, 
+        body.dark-mode #footer { background-color: #212529 !important; border-color: #343a40 !important; color: #e9ecef !important; }
+        body.dark-mode #header .navbar-brand { color: #0d6efd !important; }
+        body.dark-mode #footer .text-muted,
+        body.dark-mode #footer .text-primary { color: #adb5bd !important; }
+
+        body.dark-mode #nav-panel { background-color: #212529 !important; border-color: #343a40 !important; }
+        body.dark-mode .nav-section-title { color: #9ca3af !important; }
+        body.dark-mode .nav-link { color: #adb5bd; }
+        body.dark-mode .nav-link:hover { background: rgba(255,255,255,0.1); }
+        body.dark-mode .nav-link.active { background: #0d6efd; color: #ffffff; }
+
+        body.dark-mode .app-window, 
+        body.dark-mode .window-body, 
+        body.dark-mode #aside-panel, 
+        body.dark-mode .stats-card { background-color: #2c3034 !important; color: #e9ecef; }
+        body.dark-mode .window-header { background-color: #3e444a; border-bottom-color: #495057; color: #ffffff !important; }
+        body.dark-mode .window-title { color: #ffffff !important; }
+        body.dark-mode .win-btn { color: #adb5bd; }
+        body.dark-mode .win-btn:hover { background-color: rgba(255,255,255,0.1); color: #ffffff; }
+
+        /* Fix visibility of muted text and labels in PREF/Config */
+        body.dark-mode .section-title-label { color: #9ca3af !important; }
+        body.dark-mode .form-label-text { color: #d1d5db !important; }
+        body.dark-mode .help-text { color: #9ca3af !important; }
+        body.dark-mode .theme-label-text { color: #ffffff !important; }
+
+        body.dark-mode .bg-white, 
+        body.dark-mode .sticky-top { background-color: #2c3034 !important; color: #e9ecef !important; }
+        body.dark-mode .form-control, 
+        body.dark-mode .form-select { background-color: #212529; border-color: #495057; color: #fff; }
+        body.dark-mode .win-list-item:hover { background: #3d4246; }
+        
+        .x-small { font-size: 0.7rem; }
+        .table-mini { font-size: 0.75rem; }
+        .btn-xs { padding: 2px 5px; font-size: 0.65rem; }
+        .editable-cell { cursor: pointer; position: relative; }
+        .editable-cell:hover { background: #f0f7ff; }
+        .editable-input { width: 100%; border: 1px solid #0d6efd; padding: 0 4px; border-radius: 2px; outline: none; }
+        .add-row-input { border: 1px solid #dee2e6; font-size: 0.7rem; padding: 2px; width: 100%; }
+        .add-row-input:focus { border-color: #0d6efd; outline: none; }
+    </style>
+</head>
+<body class="light-mode">
+
+    <header id="header" class="navbar navbar-expand-lg navbar-light bg-white border-bottom px-4">
+        <div id="header-container-left" class="d-flex gap-2 align-items-center"></div>
+        <span class="navbar-brand fw-bold text-primary mx-3">APP STUDIO MDI</span>
+        <div id="header-container-right" class="d-flex gap-2 align-items-center me-auto"></div>
+        <div id="header-container-end" class="d-flex gap-2 align-items-center"></div>
+    </header>
+
+    <div id="wrapper">
+        <nav id="nav-panel"><div id="nav-dynamic-content" class="w-100"></div></nav>
+        <main id="main-content"></main>
+        <aside id="aside-panel" class="collapsed p-3">
+            <h6 class="fw-bold x-small text-uppercase text-muted">Gestor de Ventanas</h6>
+            <hr class="my-2">
+            <div id="window-list" class="small d-flex flex-column gap-1"></div>
+            <div id="window-inspector" class="mt-4 d-none">
+                <h6 class="fw-bold x-small text-uppercase text-primary">Inspector de Estilos</h6>
+                <div id="inspector-content"></div>
+            </div>
+        </aside>
+    </div>
+
+    <footer id="footer" class="bg-white border-top d-flex align-items-center px-4 justify-content-between">
+        <small class="text-muted" id="footer-tag">&copy; 2024 App Studio</small>
+        <div id="db-status-footer" class="small text-primary">Listo</div>
+    </footer>
+
+    <script>
+        let activeDBName = localStorage.getItem('activeDB') || "AppStudioDB_Prod";
+        let db;
+
+        const app = {
+            async init() {
+                this.initDB(activeDBName);
+                const theme = await db.settings.get('theme');
+                if (theme?.value === 'dark') ui.toggleTheme(true);
+                
+                if (await db.nav_elements.count() === 0) {
+                    await this.resetDatabaseFromTemplate(false);
+                }
+
+                await this.renderNav();
+                await this.renderHeader();
+                this.updateDBStatus();
+                $('#db-selector').val(activeDBName);
+
+                $(document).on('shown.bs.tab', '#dbTabs button', function (e) {
+                    const target = $(e.target).attr('data-bs-target');
+                    if (target === '#tpl-db-pane') { $('#tpl-controls').removeClass('d-none'); $('#real-controls').addClass('d-none'); }
+                    else { $('#tpl-controls').addClass('d-none'); $('#real-controls').removeClass('d-none'); }
+                });
+            },
+
+            initDB(name) {
+                db = new Dexie(name);
+                db.version(1).stores({
+                    settings: 'id, value',
+                    tasks: '++id, title, status',
+                    nav_elements: '++id, section, label, icon, view',
+                    header_elements: '++id, label, icon, action, position',
+                    window_buttons: '++id, label, icon, action, class',
+                    window_config: '++id, width, height, position',
+                    actions_registry: '++id, component, action, code, params, desc',
+                    usuarios: '++id, nombre, rol',
+                    productos: '++id, item, stock'
+                });
+            },
+
+            async changeDatabase(newName) {
+                activeDBName = newName;
+                localStorage.setItem('activeDB', newName);
+                $('.app-window').remove();
+                this.windowCount = 0;
+                this.initDB(newName);
+                if (await db.nav_elements.count() === 0) {
+                    await this.resetDatabaseFromTemplate(false, newName);
+                }
+                await this.renderNav();
+                await this.renderHeader();
+                this.updateDBStatus();
+                this.updateWindowList();
+                
+                $('#db-active-label').text(newName);
+                $('#db-alert-indicator').text(`Conectado a ${newName}`);
+            },
+
+            async resetDatabaseFromTemplate(refreshUI = true, dbNameHint = "") {
+                const schemaHtml = $('#tpl-arrays').html();
+                const tempDiv = $('<div>').append(schemaHtml);
+                const jsonData = JSON.parse(tempDiv.find('#schema-data').text());
+                
+                if (activeDBName.includes('Test')) {
+                    jsonData.nav_elements[0].label = "Panel Beta";
+                    jsonData.usuarios = [{ "id": 1, "nombre": "Tester 01", "rol": "QA" }, { "id": 2, "nombre": "Tester 02", "rol": "QA" }];
+                } else if (activeDBName.includes('Dev')) {
+                    jsonData.nav_elements.push({ "section": "Debug", "label": "Logs", "icon": "🐛", "view": "logs" });
+                }
+
+                const tables = Object.keys(jsonData);
+                for(let table of tables) {
+                    if(db[table]) {
+                        await db[table].clear();
+                        await db[table].bulkAdd(jsonData[table]);
+                    }
+                }
+                if (refreshUI) { this.renderNav(); this.renderHeader(); this.refreshDatabaseView(); this.loadWinPrefs(); }
+            },
+
+            async renderNav() {
+                let navData = await db.nav_elements.toArray();
+                const container = $('#nav-dynamic-content').empty();
+                const sections = [...new Set(navData.map(item => item.section))];
+                sections.forEach(sec => {
+                    const div = $('<div class="nav-section-container"></div>');
+                    div.append(`<small class="text-uppercase fw-bold x-small nav-section-title d-block mb-1">${sec}</small>`);
+                    const group = $('<div class="nav flex-column"></div>');
+                    navData.filter(i => i.section === sec).forEach(item => {
+                        const link = $(`<a class="nav-link x-small" data-view="${item.view}" title="${item.label}">
+                            <span class="nav-icon">${item.icon}</span>
+                            <span class="nav-label">${item.label}</span>
+                        </a>`);
+                        link.on('click', () => {
+                            $('.nav-link').removeClass('active');
+                            link.addClass('active');
+                            app.createWindow(item.view, item.label);
+                        });
+                        group.append(link);
+                    });
+                    container.append(div.append(group));
+                });
+            },
+
+            async renderHeader() {
+                const headerData = await db.header_elements.toArray();
+                const cLeft = $('#header-container-left').empty();
+                const cEnd = $('#header-container-end').empty();
+                headerData.forEach(item => {
+                    let act = item.action === 'toggle-nav' ? "ui.togglePanel('nav')" : item.action === 'toggle-aside' ? "ui.togglePanel('aside')" : item.action === 'fullscreen' ? "ui.toggleFullScreen()" : "";
+                    const btn = `<button class="btn btn-sm btn-light border x-small" onclick="${act}">${item.icon} ${item.label}</button>`;
+                    item.position === 'left' ? cLeft.append(btn) : cEnd.append(btn);
+                });
+            },
+
+            renderTemplateData() {
+                const container = $('#template-data-view').empty();
+                const schemaHtml = $('#tpl-arrays').html();
+                const tempDiv = $('<div>').append(schemaHtml);
+                const jsonData = JSON.parse(tempDiv.find('#schema-data').text());
+                
+                Object.keys(jsonData).forEach((table, idx) => {
+                    if (jsonData[table]?.length) {
+                        const collapseId = `tpl-collapse-${idx}`;
+                        let html = `<div class="mb-2 border rounded overflow-hidden">
+                            <div class="collapsible-header x-small text-muted p-2 fw-bold text-uppercase d-flex align-items-center collapsed" data-bs-toggle="collapse" data-bs-target="#${collapseId}"><span class="collapse-icon">▼</span> ${table}</div>
+                            <div id="${collapseId}" class="collapse"><table class="table table-sm table-mini border-top mb-0"><thead><tr>`;
+                        const headers = Object.keys(jsonData[table][0]);
+                        headers.forEach(h => html += `<th>${h}</th>`);
+                        html += `</tr></thead><tbody>`;
+                        jsonData[table].forEach(row => { html += `<tr>`; headers.forEach(h => html += `<td>${row[h]}</td>`); html += `</tr>`; });
+                        container.append(html + `</tbody></table></div></div>`);
+                    }
+                });
+            },
+
+            async loadWinPrefs() {
+                const conf = await db.window_config.get(1);
+                if (conf) { $('#win-pref-width').val(conf.width); $('#win-pref-height').val(conf.height); $('#win-pref-pos').val(conf.position); }
+            },
+
+            async saveWinPrefs() {
+                const updated = { id: 1, width: parseInt($('#win-pref-width').val()) || 400, height: parseInt($('#win-pref-height').val()) || 300, position: $('#win-pref-pos').val() };
+                await db.window_config.put(updated);
+            },
+
+            async refreshDatabaseView() {
+                const tableNames = db.tables.map(t => t.name).filter(name => name !== 'settings');
+                $("#nav-db-table-container, #header-db-table-container, #win-btn-table-container, #actions-registry-table-container").empty();
+                $('#live-db-tables-view').empty();
+                for (let table of tableNames) {
+                    const data = await db[table].toArray();
+                    this.renderEditableTable(table, data);
+                    this.renderLiveTableInDatabaseView(table, data);
+                }
+            },
+
+            renderLiveTableInDatabaseView(table, data) {
+                const container = $('#live-db-tables-view');
+                if (!container.length) return;
+                const collapseId = `live-collapse-${table}`;
+                let html = `<div class="mb-2 border rounded overflow-hidden">
+                    <div class="collapsible-header x-small text-primary p-2 fw-bold text-uppercase d-flex align-items-center collapsed" data-bs-toggle="collapse" data-bs-target="#${collapseId}"><span class="collapse-icon">▼</span> ${table} (${data.length})</div>
+                    <div id="${collapseId}" class="collapse">`;
+                if (data.length > 0) {
+                    const headers = Object.keys(data[0]);
+                    html += `<table class="table table-sm table-mini table-hover border-top mb-0"><thead><tr>`;
+                    headers.forEach(h => html += `<th>${h}</th>`);
+                    html += `<th>×</th></tr></thead><tbody>`;
+                    data.forEach(row => { html += `<tr>`; headers.forEach(h => html += `<td>${row[h]}</td>`); html += `<td><button class="btn btn-xs btn-danger" onclick="app.deleteRow('${table}', ${row.id})">×</button></td></tr>`; });
+                    html += `</tbody></table>`;
+                } else { html += `<div class="p-2 x-small text-muted italic">Tabla vacía</div>`; }
+                html += `</div></div>`;
+                container.append(html);
+            },
+
+            renderEditableTable(table, data) {
+                let targetId = "";
+                if (table === 'nav_elements') targetId = "#nav-db-table-container";
+                else if (table === 'header_elements') targetId = "#header-db-table-container";
+                else if (table === 'window_buttons') targetId = "#win-btn-table-container";
+                else if (table === 'actions_registry') targetId = "#actions-registry-table-container";
+                if (!$(targetId).length) return;
+                let headers = data.length > 0 ? Object.keys(data[0]).filter(h => h !== 'id') : [];
+                if (headers.length === 0) return;
+                let html = `<table class="table table-sm table-mini border mt-2"><thead><tr class="bg-light">`;
+                headers.forEach(h => html += `<th class="text-uppercase">${h}</th>`);
+                html += `<th>×</th></tr></thead><tbody>`;
+                data.forEach(row => {
+                    html += `<tr data-id="${row.id}">`;
+                    headers.forEach(h => html += `<td class="editable-cell" data-field="${h}">${row[h]}</td>`);
+                    html += `<td><button class="btn btn-xs btn-danger" onclick="app.deleteRow('${table}', ${row.id})">×</button></td></tr>`;
+                });
+                html += `<tr class="bg-light add-row" data-table="${table}">`;
+                headers.forEach(h => html += `<td><input type="text" class="add-row-input" data-field="${h}" placeholder="+"></td>`);
+                html += `<td><button class="btn btn-xs btn-primary" onclick="app.addNewRow('${table}', this)">+</button></td></tr>`;
+                $(targetId).html(html + "</tbody></table>");
+                $(targetId).find('.editable-cell').on('click', function() {
+                    if ($(this).find('input').length) return;
+                    const val = $(this).text(), field = $(this).data('field'), id = $(this).closest('tr').data('id');
+                    const input = $(`<input type="text" class="editable-input" value="${val}">`);
+                    $(this).html(input);
+                    input.focus().on('blur', async function() {
+                        const newVal = $(this).val();
+                        await db[table].update(id, { [field]: newVal });
+                        app.refreshDatabaseView();
+                        if (table === 'nav_elements') app.renderNav();
+                        if (table === 'header_elements') app.renderHeader();
+                    }).on('keypress', function(e) { if (e.which === 13) $(this).blur(); });
+                });
+            },
+
+            async addNewRow(table, btn) {
+                const row = $(btn).closest('tr'), newItem = {};
+                row.find('input').each(function() { newItem[$(this).data('field')] = $(this).val(); });
+                if (Object.values(newItem).every(v => v === "")) return;
+                await db[table].add(newItem);
+                this.refreshDatabaseView();
+                if (table === 'nav_elements') this.renderNav();
+                if (table === 'header_elements') this.renderHeader();
+            },
+
+            async deleteRow(table, id) {
+                await db[table].delete(id);
+                this.refreshDatabaseView();
+                if (table === 'nav_elements') this.renderNav();
+                if (table === 'header_elements') this.renderHeader();
+            },
+
+            windowCount: 0,
+            async createWindow(viewId, title) {
+                if ($(`.app-window[data-origin-view="${viewId}"]`).length > 0) return;
+                $(`.nav-link[data-view="${viewId}"]`).addClass('disabled');
+                const winButtons = await db.window_buttons.toArray();
+                const config = await db.window_config.get(1) || { width: 420, height: 300, position: 'cascade' };
+                this.windowCount++;
+                const winId = `win-${this.windowCount}`;
+                let controlsHtml = "";
+                winButtons.forEach(btn => {
+                    let act = btn.action === 'close' ? `app.closeWindow('${winId}')` : btn.action === 'maximize' ? `app.toggleMaximizeWindow('${winId}')` : btn.action === 'minimize' ? `app.toggleMinimizeWindow('${winId}')` : btn.action === 'toggle-header' ? `app.toggleWindowHeader('${winId}')` : "";
+                    controlsHtml += `<button class="win-btn ${btn.class}">${btn.icon}</button>`;
+                });
+                let top = 40 + (this.windowCount * 25), left = 40 + (this.windowCount * 25);
+                const winHtml = `<div id="${winId}" class="app-window" data-origin-view="${viewId}" style="top:${top}px; left:${left}px; width:${config.width}px; height:${config.height}px;">
+                    <div class="window-header"><span class="window-title x-small fw-bold">${title}</span><div class="window-controls">${controlsHtml}</div></div>
+                    <div class="window-body" id="body-${winId}"></div>
+                </div>`;
+                $('#main-content').append(winHtml);
+                const tpl = document.getElementById(`tpl-${viewId}`);
+                if (tpl) $(`#body-${winId}`).append(tpl.content.cloneNode(true));
+                $(`#${winId}`).draggable({ handle: ".window-header", containment: "#main-content", stack: ".app-window" }).resizable();
+                
+                $(`#${winId} .win-btn`).each(function(idx) {
+                    const btnConfig = winButtons[idx];
+                    $(this).on('click', () => {
+                        if (btnConfig.action === 'close') app.closeWindow(winId);
+                        else if (btnConfig.action === 'maximize') app.toggleMaximizeWindow(winId);
+                        else if (btnConfig.action === 'minimize') app.toggleMinimizeWindow(winId);
+                        else if (btnConfig.action === 'toggle-header') app.toggleWindowHeader(winId);
+                    });
+                });
+
+                if (viewId === 'config') { this.refreshDatabaseView(); this.loadWinPrefs(); }
+                if (viewId === 'database') { this.refreshDatabaseView(); this.renderTemplateData(); }
+                if (viewId === 'tasks') this.refreshTasks(winId);
+                if (viewId === 'dashboard') { $('#db-active-label').text(activeDBName); }
+                this.updateWindowList();
+            },
+
+            toggleWindowHeader(id) { $(`#${id}`).toggleClass('no-header'); },
+            toggleMaximizeWindow(id) { const w = $(`#${id}`); w.hasClass('maximized') ? w.removeClass('maximized').draggable("enable") : w.addClass('maximized').draggable("disable"); },
+            toggleMinimizeWindow(id) { $(`#${id}`).toggleClass('minimized'); },
+            closeWindow(id) { 
+                const origin = $(`#${id}`).attr('data-origin-view');
+                $(`.nav-link[data-view="${origin}"]`).removeClass('disabled');
+                $(`#${id}`).remove(); 
+                this.updateWindowList(); 
+                $('#window-inspector').addClass('d-none');
+            },
+
+            async addTask() {
+                const val = $('#taskInput').val(); if (!val) return;
+                await db.tasks.add({ title: val, status: 'pending' });
+                $('#taskInput').val('');
+                this.refreshTasks($('.app-window[data-origin-view="tasks"]').attr('id'));
+                this.updateDBStatus();
+            },
+            async refreshTasks(id) {
+                const data = await db.tasks.toArray();
+                const container = $(`#${id} #task-list-container`).empty();
+                data.forEach(t => container.append(`<li class="list-group-item d-flex justify-content-between p-1 x-small"><span>${t.title}</span><button class="btn btn-xs text-danger" onclick="app.deleteTask(${t.id}, '${id}')">×</button></li>`));
+            },
+            async deleteTask(id, winId) { await db.tasks.delete(id); this.refreshTasks(winId); this.updateDBStatus(); },
+            updateDBStatus() { db.tasks.count().then(c => $('#db-status-footer').text(`DB: ${activeDBName.split('_')[1]} | Tareas: ${c}`)); },
+            
+            updateWindowList() {
+                const list = $('#window-list').empty();
+                $('.app-window').each(function() {
+                    const id = $(this).attr('id');
+                    const title = $(this).find('.window-title').text();
+                    const item = $(`<div class="win-list-item p-2 x-small border fw-bold text-muted" data-win-id="${id}">${title}</div>`);
+                    item.on('click', () => {
+                        $('.win-list-item').removeClass('selected');
+                        item.addClass('selected');
+                        app.inspectWindow(id);
+                    });
+                    list.append(item);
+                });
+            },
+
+            inspectWindow(id) {
+                const win = $(`#${id}`);
+                const body = win.find('.window-body');
+                const inspector = $('#window-inspector').removeClass('d-none');
+                const content = $('#inspector-content').empty();
+                
+                // Estadísticas generales
+                let html = `<div class="stats-card">
+                    <div class="x-small fw-bold border-bottom mb-2 pb-1">Geometría</div>
+                    <div class="x-small">W: ${win.width()}px | H: ${win.height()}px</div>
+                    <div class="x-small">Pos: T:${parseInt(win.css('top'))} L:${parseInt(win.css('left'))}</div>
+                </div>`;
+
+                // Conteo de Componentes
+                const components = {
+                    "Botones": body.find('button').length,
+                    "Inputs": body.find('input, select').length,
+                    "Listas": body.find('ul, table').length,
+                    "Alertas": body.find('.alert').length
+                };
+
+                html += `<div class="stats-card">
+                    <div class="x-small fw-bold border-bottom mb-2 pb-1">Componentes</div>
+                    <div class="d-flex flex-wrap gap-2">`;
+                for(let key in components) {
+                    if(components[key] > 0) html += `<div class="badge bg-light text-dark border x-small">${key}: ${components[key]}</div>`;
+                }
+                html += `</div></div>`;
+
+                // Análisis de estilos de componentes clave
+                const mainBtn = body.find('button.btn-primary').first();
+                if(mainBtn.length) {
+                    const styles = window.getComputedStyle(mainBtn[0]);
+                    html += `<div class="stats-card">
+                        <div class="x-small fw-bold border-bottom mb-2 pb-1">Estilo (Botón Principal)</div>
+                        <div class="x-small">Color: <span style="color:${styles.backgroundColor}">⬤</span> ${styles.backgroundColor}</div>
+                        <div class="x-small">Radio: ${styles.borderRadius}</div>
+                        <div class="x-small">Font: ${styles.fontSize}</div>
+                    </div>`;
+                }
+
+                content.append(html);
+            }
+        };
+
+        const ui = {
+            togglePanel(id) { $(`#${id}-panel`).toggleClass('collapsed'); },
+            toggleTheme(init) {
+                const b = $('body');
+                if (init) { b.addClass('dark-mode'); b.removeClass('light-mode'); $('#themeSwitch').prop('checked', true); }
+                else { 
+                    b.toggleClass('dark-mode'); 
+                    b.toggleClass('light-mode');
+                    db.settings.put({ id: 'theme', value: b.hasClass('dark-mode') ? 'dark' : 'light' }); 
+                }
+            },
+            toggleFullScreen() { !document.fullscreenElement ? document.documentElement.requestFullscreen() : document.exitFullscreen(); }
+        };
+
+        $(document).ready(() => app.init());
+    </script>
+</body>
+</html>

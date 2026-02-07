@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML_render - App Studio MDI</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <!-- jQuery UI CSS -->
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
+    
+    <!-- Dexie.js -->
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <!-- jQuery y jQuery UI JS -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
+
+    <!-- Template: Dashboard -->
+    <template id="tpl-dashboard">
+        <div class="p-3 text-center">
+            <h5 class="fw-bold mb-3"><i class="bi bi-speedometer2 text-primary"></i> Dashboard Principal</h5>
+            <div class="row g-3">
+                <div class="col-6">
+                    <div class="p-3 border rounded bg-light">
+                        <div class="small text-muted">Proyectos</div>
+                        <div class="h4 fw-bold mb-0" id="dash-project-count">0</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="p-3 border rounded bg-light">
+                        <div class="small text-muted">Elementos</div>
+                        <div class="h4 fw-bold mb-0" id="dash-element-count">0</div>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-4 p-3 alert alert-info small border-0 shadow-sm">
+                Bienvenido al sistema HTML_render. Utilice el panel lateral para comenzar un nuevo proyecto.
+            </div>
+        </div>
+    </template>
+
+    <!-- Template: Manual HTML -->
+    <template id="tpl-manual">
+        <div class="d-flex flex-column h-100">
+            <ul class="nav nav-tabs px-3 pt-2 bg-light border-bottom" id="manualTabs" role="tablist">
+                <li class="nav-item">
+                    <button class="nav-link active py-1 small" data-bs-toggle="tab" data-bs-target="#manual-creator" type="button">Creador de Array</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link py-1 small" data-bs-toggle="tab" data-bs-target="#manual-doc" type="button">HTML Doc</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link py-1 small" data-bs-toggle="tab" data-bs-target="#manual-preview" type="button" onclick="app.updateManualPreview()">Preview</button>
+                </li>
+            </ul>
+
+            <div class="tab-content flex-grow-1 overflow-auto">
+                <div class="tab-pane fade show active p-3" id="manual-creator">
+                    <div class="card mb-3 shadow-sm border-0 bg-light">
+                        <div class="card-body p-3">
+                            <form id="form-element-creator" class="row g-2">
+                                <div class="col-md-3">
+                                    <label class="small fw-bold">Tag Name</label>
+                                    <input list="common-tags" name="tagName" class="form-control form-control-sm" oninput="app.handleTagInput(this)" required>
+                                    <datalist id="common-tags">
+                                        <option value="div"><option value="section"><option value="header"><option value="footer"><option value="h1"><option value="p"><option value="button"><option value="img"><option value="template"><option value="link"><option value="script">
+                                    </datalist>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="small fw-bold">ID</label>
+                                    <input type="text" id="auto-id-field" name="idName" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="small fw-bold">Padre</label>
+                                    <select name="parentId" class="form-select form-select-sm" id="parent-id-selector">
+                                        <option value="">body</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="small fw-bold">Contenido/Atributos</label>
+                                    <input type="text" name="textContent" class="form-control form-control-sm" placeholder="Texto, HTML o src/rel/href...">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="small fw-bold">Class</label>
+                                    <input type="text" name="className" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="small fw-bold">Style</label>
+                                    <input type="text" name="styleAttr" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-12 text-end mt-2 d-flex justify-content-between">
+                                    <button type="button" id="btn-cancel-edit" class="btn btn-sm btn-outline-secondary px-3" style="display:none;" onclick="app.cancelEdit()">Cancelar</button>
+                                    <button type="button" id="btn-submit-element" class="btn btn-sm btn-success px-4 ms-auto" onclick="app.addElementToArray(this)">+ Añadir</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="table-responsive bg-white border rounded">
+                        <table class="table table-sm table-hover mb-0" style="font-size: 0.75rem;">
+                            <thead class="table-light"><tr><th>Tag</th><th>ID</th><th>Contenido</th><th>Atributos</th><th>Padre</th><th class="text-end">Acción</th></tr></thead>
+                            <tbody id="manual-elements-list" class="cursor-pointer"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade h-100" id="manual-doc">
+                    <div class="row g-0 h-100">
+                        <div class="col-md-4 border-end bg-light p-3 overflow-auto">
+                            <h6 class="fw-bold mb-3 text-primary small text-uppercase">Head / Librerías</h6>
+                            <div class="card border-0 shadow-sm mb-3">
+                                <div class="card-header bg-white py-2 small fw-bold text-muted">Añadir Nueva Librería/Tag</div>
+                                <div class="card-body p-2">
+                                    <div class="mb-2">
+                                        <select id="new-head-type" class="form-select form-select-sm mb-1" onchange="app.toggleHeadInputFields()">
+                                            <option value="style">Style (link href)</option>
+                                            <option value="script">Script (src)</option>
+                                            <option value="generic">Genérica (title, base, etc)</option>
+                                        </select>
+                                        <input type="text" id="new-head-tag" class="form-control form-control-sm mb-1" placeholder="Nombre Tag (ej: title)" style="display:none;">
+                                        <input type="text" id="new-head-val" class="form-control form-control-sm" placeholder="Valor / URL">
+                                    </div>
+                                    <button class="btn btn-xs btn-primary w-100" onclick="app.addHeadLibrary()">+ Añadir a Librería</button>
+                                </div>
+                            </div>
+                            <div class="list-group list-group-flush shadow-sm rounded mb-4" id="head-library-list">
+                                <label class="list-group-item d-flex justify-content-between">
+                                    <span>Bootstrap 5.3</span>
+                                    <input class="form-check-input head-lib" type="checkbox" value="bootstrap" checked onchange="app.refreshManualUI()">
+                                </label>
+                                <label class="list-group-item d-flex justify-content-between">
+                                    <span>Google Fonts</span>
+                                    <input class="form-check-input head-lib" type="checkbox" value="googlefonts" onchange="app.refreshManualUI()">
+                                </label>
+                                <div id="custom-head-list"></div>
+                            </div>
+                            <h6 class="fw-bold mb-3 text-warning small text-uppercase">Configuración Body</h6>
+                            <div class="card border-0 shadow-sm mb-4">
+                                <div class="card-body p-2">
+                                    <div class="mb-2">
+                                        <label class="small fw-bold text-muted">Clases del Body</label>
+                                        <input type="text" id="body-class-input" class="form-control form-control-sm" placeholder="p-4 bg-light..." oninput="app.updateBodyConfig()">
+                                    </div>
+                                    <div>
+                                        <label class="small fw-bold text-muted">Estilos del Body</label>
+                                        <input type="text" id="body-style-input" class="form-control form-control-sm" placeholder="background: #fff;" oninput="app.updateBodyConfig()">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-8 p-3">
+                            <h6 class="fw-bold mb-2 small text-muted text-uppercase">Basic HTML Structure</h6>
+                            <div class="bg-dark p-3 rounded font-monospace small h-100 overflow-auto text-light" id="basic-html-skeleton"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade h-100 d-flex flex-column" id="manual-preview">
+                    <div class="p-2 border-bottom d-flex gap-2 bg-white">
+                        <button class="btn btn-xs btn-outline-primary" onclick="app.updateManualPreview()">Refrescar</button>
+                        <button class="btn btn-xs btn-success" onclick="app.exportToHTML()">Exportar HTML</button>
+                        <button class="btn btn-xs btn-dark" onclick="app.exportWithScript()">Exportar con Script de Render</button>
+                    </div>
+                    <iframe id="manual-preview-frame" class="flex-grow-1 border-0 w-100"></iframe>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Template: Import HTML -->
+    <template id="tpl-import">
+        <div class="d-flex flex-column h-100">
+            <ul class="nav nav-tabs px-3 pt-2 bg-light border-bottom" id="importTabs" role="tablist">
+                <li class="nav-item">
+                    <button class="nav-link active py-1 small" data-bs-toggle="tab" data-bs-target="#import-file" type="button">File Import</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link py-1 small" data-bs-toggle="tab" data-bs-target="#import-creator" type="button" onclick="app.refreshManualList()">Creador de Array</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link py-1 small" data-bs-toggle="tab" data-bs-target="#import-doc" type="button" onclick="app.refreshSkeleton()">HTML Doc</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link py-1 small" data-bs-toggle="tab" data-bs-target="#import-preview" type="button">Preview</button>
+                </li>
+            </ul>
+
+            <div class="tab-content flex-grow-1 overflow-auto">
+                <div class="tab-pane fade show active p-3" id="import-file">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-body">
+                            <h6 class="fw-bold mb-3 small"><i class="bi bi-box-arrow-in-down text-primary"></i> IMPORTAR ARCHIVO O CÓDIGO</h6>
+                            <div class="mb-3">
+                                <label class="small text-muted mb-1">Subir archivo HTML</label>
+                                <input type="file" class="form-control form-control-sm" accept=".html,.htm" onchange="app.handleFileUpload(this)">
+                            </div>
+                            <div class="mb-3">
+                                <label class="small text-muted mb-1">O pegar código manualmente</label>
+                                <textarea id="import-text-area" class="form-control font-monospace" rows="8" placeholder="Pega tu HTML aquí..." style="font-size: 11px;"></textarea>
+                            </div>
+                            <button class="btn btn-sm btn-primary w-100" onclick="app.processImportedHTML()">Procesar e Importar al Array</button>
+                            <div id="import-status" class="mt-3 small text-center"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tab-pane fade p-3" id="import-creator">
+                     <div class="table-responsive bg-white border rounded">
+                        <table class="table table-sm table-hover mb-0" style="font-size: 0.75rem;">
+                            <thead class="table-light"><tr><th>Tag</th><th>ID</th><th>Contenido</th><th>Atributos</th><th>Padre</th><th class="text-end">Acción</th></tr></thead>
+                            <tbody id="import-elements-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="tab-pane fade h-100 p-3" id="import-doc">
+                     <div class="bg-dark p-3 rounded font-monospace small h-100 overflow-auto text-light" id="import-skeleton-view"></div>
+                </div>
+                <div class="tab-pane fade p-3" id="import-preview">
+                    <div class="text-center py-5">
+                        <i class="bi bi-window-stack display-4 text-muted mb-3 d-block"></i>
+                        <h5>Vista Previa Externa</h5>
+                        <p class="text-muted small">Abre una nueva pestaña con el renderizado dinámico del array importado.</p>
+                        <div class="d-flex justify-content-center gap-2">
+                            <button class="btn btn-primary" onclick="app.openExternalPreview()">Abrir en nueva pestaña</button>
+                            <button class="btn btn-dark" onclick="app.exportWithScript()">Exportar con Script de Render</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <style>
+        :root { --sidebar-width: 240px; --sidebar-collapsed-width: 70px; --transition-speed: 0.3s; }
+        body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; font-family: 'Segoe UI', sans-serif; margin: 0; background-color: #f4f7f9; }
+        #header { height: 60px; z-index: 1030; }
+        #footer { height: 40px; z-index: 1030; }
+        #wrapper { display: flex; flex: 1; overflow: hidden; position: relative; }
+        
+        #nav-panel { 
+            width: var(--sidebar-width); 
+            transition: width var(--transition-speed); 
+            border-right: 1px solid #dee2e6; 
+            background: #fff; 
+            z-index: 1020; 
+            overflow: hidden; 
+            display: flex; 
+            flex-direction: column; 
+        }
+        #nav-panel.collapsed { width: var(--sidebar-collapsed-width); }
+        
+        #nav-panel .nav-link {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            color: #495057;
+            white-space: nowrap;
+            transition: all var(--transition-speed);
+            border-radius: 0;
+        }
+        #nav-panel.collapsed .nav-link {
+            padding-left: 0;
+            padding-right: 0;
+            justify-content: center;
+        }
+        #nav-panel .nav-link i {
+            font-size: 1.2rem;
+            min-width: 30px;
+            display: flex;
+            justify-content: center;
+        }
+        #nav-panel.collapsed .nav-link i {
+            margin-right: 0 !important;
+            font-size: 1.4rem;
+        }
+        #nav-panel .nav-text {
+            transition: opacity var(--transition-speed);
+            opacity: 1;
+            margin-left: 10px;
+        }
+        #nav-panel.collapsed .nav-text {
+            opacity: 0;
+            width: 0;
+            display: none;
+        }
+        #nav-panel hr { margin: 10px 15px; }
+        #nav-panel.collapsed hr { margin: 10px 10px; }
+
+        #main-content { flex: 1; position: relative; background: #e9ecef; overflow: hidden; }
+        
+        /* Estilos de Ventana Mejorados */
+        .app-window { position: absolute; width: 450px; min-height: 250px; background: white; border: 1px solid #adb5bd; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); display: flex; flex-direction: column; overflow: hidden; transition: box-shadow 0.2s; }
+        .app-window.maximized { top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; border-radius: 0; z-index: 2000 !important; }
+        .window-header { background: #f8f9fa; padding: 6px 12px; cursor: move; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #dee2e6; user-select: none; }
+        .window-title { font-size: 0.8rem; font-weight: 700; color: #333; display: flex; align-items: center; gap: 6px; }
+        .window-body { flex: 1; overflow: auto; background: #fff; position: relative; transition: height 0.3s; }
+        .window-body.minimized { display: none; }
+        
+        /* Controles de Ventana */
+        .window-controls { display: flex; align-items: center; gap: 4px; }
+        .win-ctrl-btn { width: 26px; height: 26px; border: none; background: transparent; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; color: #6c757d; transition: all 0.2s; }
+        .win-ctrl-btn:hover { background: #e9ecef; color: #212529; }
+        .win-ctrl-btn.close:hover { background: #dc3545; color: #fff; }
+
+        .app-window[data-origin-view="manual"] { width: 1100px; height: 750px; }
+        .app-window[data-origin-view="import"] { width: 1000px; height: 700px; }
+        
+        .btn-xs { padding: 2px 8px; font-size: 0.7rem; border-radius: 4px; }
+        .tree-tag { color: #ff79c6; }
+        .tree-attr-key { color: #50fa7b; }
+        .tree-attr-val { color: #f1fa8c; }
+        .tree-comment { color: #6272a4; font-style: italic; }
+        .node-container { margin-left: 20px; border-left: 1px solid #444; }
+        .nav-link { cursor: pointer; }
+        .nav-link:hover { background-color: #f1f3f5; color: #0d6efd; }
+        
+        body.dark-mode { background-color: #121416; color: #e9ecef; }
+        body.dark-mode .app-window, body.dark-mode .window-body, body.dark-mode .bg-white { background-color: #1a1d20 !important; color: #e9ecef; }
+        body.dark-mode .window-header, body.dark-mode .bg-light, body.dark-mode .nav-tabs { background-color: #212529 !important; border-color: #343a40 !important; }
+        body.dark-mode #nav-panel { background-color: #1a1d20; border-color: #343a40; }
+        body.dark-mode .nav-link { color: #adb5bd; }
+        body.dark-mode .nav-link:hover { background-color: #2b3035; color: #fff; }
+        .cursor-pointer { cursor: pointer; }
+        tr.editing-row { background-color: #fff3cd !important; }
+    </style>
+</head>
+<body>
+
+    <header id="header" class="navbar navbar-expand-lg navbar-light bg-white border-bottom px-4 shadow-sm">
+        <button class="btn btn-sm btn-light border me-3" onclick="ui.togglePanel('nav')"><i class="bi bi-list"></i></button>
+        <span class="navbar-brand fw-bold text-primary"><i class="bi bi-code-slash"></i> HTML_RENDER</span>
+        <div class="ms-auto d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary rounded-pill" onclick="ui.toggleFullScreen()"><i class="bi bi-fullscreen"></i></button>
+            <button class="btn btn-sm btn-primary rounded-pill px-3" onclick="app.createWindow('manual', 'Proyecto HTML')">Nuevo Proyecto</button>
+        </div>
+    </header>
+
+    <div id="wrapper">
+        <nav id="nav-panel" class="shadow-sm">
+            <div class="nav flex-column mt-2">
+                <a class="nav-link" onclick="app.createWindow('dashboard', 'Dashboard')" title="Dashboard">
+                    <i class="bi bi-grid-1x2"></i> 
+                    <span class="nav-text">Dashboard</span>
+                </a>
+                <a class="nav-link" onclick="app.createWindow('manual', 'Manual HTML')" title="Manual HTML">
+                    <i class="bi bi-layers"></i> 
+                    <span class="nav-text">Manual HTML</span>
+                </a>
+                <a class="nav-link" onclick="app.createWindow('import', 'HTML Import')" title="HTML Import">
+                    <i class="bi bi-box-arrow-in-down"></i> 
+                    <span class="nav-text">HTML Import</span>
+                </a>
+                <hr>
+                <a class="nav-link" onclick="app.createWindow('config', 'Preferencias')" title="Ajustes">
+                    <i class="bi bi-gear"></i> 
+                    <span class="nav-text">Ajustes</span>
+                </a>
+            </div>
+        </nav>
+        <main id="main-content"></main>
+    </div>
+
+    <footer id="footer" class="bg-white border-top d-flex align-items-center px-4 justify-content-between shadow-sm">
+        <small class="text-muted"><i class="bi bi-cpu"></i> v3.9 MDI Studio</small>
+        <div id="db-status-footer" class="small text-primary fw-bold">DB Conectada</div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        const db = new Dexie("HTMLRenderDB_V9");
+        db.version(1).stores({ settings: 'id, value', html_elements: '++id, data, date' });
+
+        let windowCount = 0;
+        let htmlArray = [];
+        let headLibraries = []; 
+        let editingIndex = -1;
+        let bodyConfig = { class: '', style: '' };
+
+        const escapeHTML = (str) => {
+            if (str === null || str === undefined) return "";
+            const text = String(str);
+            return text.replace(/[&<>"']/g, function(m) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+            });
+        };
+
+        const app = {
+            async init() {
+                const theme = await db.settings.get('theme');
+                if (theme?.value === 'dark') ui.toggleTheme(true);
+                this.updateDBStatus();
+                this.createWindow('dashboard', 'Panel Principal');
+            },
+
+            createWindow(viewId, title) {
+                windowCount++;
+                const winId = `win-${windowCount}`;
+                const winHtml = `
+                    <div id="${winId}" class="app-window" data-origin-view="${viewId}" style="top: ${40 + (windowCount * 20)}px; left: ${40 + (windowCount * 20)}px; z-index: ${100 + windowCount}">
+                        <div class="window-header">
+                            <span class="window-title"><i class="bi bi-window"></i> ${title}</span>
+                            <div class="window-controls">
+                                <button class="win-ctrl-btn" onclick="app.minimizeWindow('${winId}')" title="Minimizar"><i class="bi bi-dash"></i></button>
+                                <button class="win-ctrl-btn" onclick="app.maximizeWindow('${winId}')" title="Maximizar"><i class="bi bi-square"></i></button>
+                                <button class="win-ctrl-btn" onclick="app.fullscreenWindow('${winId}')" title="Pantalla Completa"><i class="bi bi-arrows-fullscreen"></i></button>
+                                <button class="win-ctrl-btn close" onclick="app.closeWindow('${winId}')" title="Cerrar"><i class="bi bi-x-lg"></i></button>
+                            </div>
+                        </div>
+                        <div class="window-body" id="body-${winId}"></div>
+                    </div>
+                `;
+                $('#main-content').append(winHtml);
+                
+                const template = document.getElementById(`tpl-${viewId}`);
+                if (template) {
+                    const clone = template.content.cloneNode(true);
+                    $(`#body-${winId}`).append(clone);
+                }
+
+                $(`#${winId}`).draggable({ handle: ".window-header", containment: "#main-content", stack: ".app-window" })
+                              .resizable({ containment: "#main-content", minHeight: 250, minWidth: 300 });
+
+                if (viewId === 'manual' || viewId === 'import') this.refreshManualUI();
+                if (viewId === 'dashboard') this.refreshDashboardStats();
+            },
+
+            // Nuevas Funciones de Gestión de Ventanas
+            minimizeWindow(winId) {
+                const body = $(`#body-${winId}`);
+                const win = $(`#${winId}`);
+                body.toggleClass('minimized');
+                if (body.hasClass('minimized')) {
+                    win.css('height', 'auto');
+                    win.resizable('disable');
+                } else {
+                    win.css('height', ''); // Restaura altura previa
+                    win.resizable('enable');
+                }
+            },
+
+            maximizeWindow(winId) {
+                const win = $(`#${winId}`);
+                win.toggleClass('maximized');
+                if (win.hasClass('maximized')) {
+                    win.draggable('disable');
+                    win.resizable('disable');
+                } else {
+                    win.draggable('enable');
+                    win.resizable('enable');
+                }
+            },
+
+            fullscreenWindow(winId) {
+                const winElem = document.getElementById(winId);
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
+                } else {
+                    winElem.requestFullscreen().catch(err => {
+                        console.error(`Error al intentar modo pantalla completa: ${err.message}`);
+                    });
+                }
+            },
+
+            handleFileUpload(input) {
+                const file = input.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    $('#import-text-area').val(e.target.result);
+                };
+                reader.readAsText(file);
+            },
+
+            processImportedHTML() {
+                const code = $('#import-text-area').val();
+                if (!code) return;
+
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(code, 'text/html');
+                const status = $('#import-status');
+                
+                status.html('<span class="text-primary"><i class="bi bi-hourglass-split"></i> Procesando...</span>');
+
+                htmlArray = [];
+                htmlArray.push({ tagName: 'html', id: 'html_root', class: doc.documentElement.className, style: doc.documentElement.style.cssText, parentId: "", content: "" });
+                htmlArray.push({ tagName: 'head', id: 'head_section', class: "", style: "", parentId: "html_root", content: "" });
+                htmlArray.push({ tagName: 'body', id: 'body_section', class: doc.body.className || '', style: doc.body.style.cssText || '', parentId: "html_root", content: "" });
+
+                const traverse = (node, parentId) => {
+                    Array.from(node.children).forEach(child => {
+                        const tag = child.tagName.toLowerCase();
+                        let childId = child.id || `${tag}_${Math.random().toString(36).substr(2, 5)}`;
+                        
+                        let content = "";
+                        let skipChildren = false;
+
+                        if (tag === 'template') {
+                            content = child.outerHTML;
+                            skipChildren = true;
+                        } 
+                        else if (tag === 'link') {
+                            const rel = child.getAttribute('rel') || '';
+                            const href = child.getAttribute('href') || '';
+                            content = `rel="${rel}" href="${href}"`;
+                            skipChildren = true;
+                        }
+                        else if (tag === 'script') {
+                            const src = child.getAttribute('src');
+                            if (src) {
+                                const type = child.getAttribute('type') || '';
+                                const async = child.hasAttribute('async') ? 'async' : '';
+                                const defer = child.hasAttribute('defer') ? 'defer' : '';
+                                content = `src="${src}" ${type ? 'type="'+type+'"' : ''} ${async} ${defer}`.trim();
+                            } else {
+                                content = child.innerHTML;
+                            }
+                            skipChildren = true;
+                        }
+                        else if (tag === 'button') {
+                            const onclick = child.getAttribute('onclick') || '';
+                            const innerTxt = child.innerText ? child.innerText.trim() : "";
+                            content = onclick ? `onclick="${onclick}"` : innerTxt;
+                        }
+                        else if (child.children.length === 0) {
+                            content = child.innerText ? child.innerText.trim() : "";
+                        }
+
+                        htmlArray.push({
+                            tagName: tag,
+                            id: childId,
+                            class: child.className || "",
+                            style: child.style.cssText || "",
+                            parentId: parentId,
+                            content: content 
+                        });
+
+                        if (!skipChildren) {
+                            traverse(child, childId);
+                        }
+                    });
+                };
+
+                traverse(doc.head, "head_section");
+                traverse(doc.body, "body_section");
+                
+                this.refreshManualUI();
+                status.html('<span class="text-success"><i class="bi bi-check-circle"></i> Importación completada.</span>');
+            },
+
+            getExportContent() {
+                const root = htmlArray.find(el => el.tagName === 'html');
+                if (root) {
+                    const buildTag = (id) => {
+                        const el = htmlArray.find(item => item.id === id);
+                        if(!el) return "";
+                        if (el.tagName === 'template' && el.content.startsWith('<template')) return el.content;
+                        if (el.tagName === 'link' && el.content.includes('href=')) return `<${el.tagName} ${el.content}${el.id ? ' id="'+el.id+'"' : ''}>`;
+                        if (el.tagName === 'script') {
+                             if (el.content.includes('src=')) return `<${el.tagName} ${el.content}${el.id ? ' id="'+el.id+'"' : ''}></${el.tagName}>`;
+                             else return `<${el.tagName}${el.id ? ' id="'+el.id+'"' : ''}>${el.content}</${el.tagName}>`;
+                        }
+
+                        let attrsStr = [
+                            el.id ? `id="${el.id}"` : '',
+                            el.class ? `class="${el.class}"` : '',
+                            el.style ? `style="${el.style}"` : ''
+                        ].filter(Boolean).join(' ');
+
+                        let innerText = el.content || "";
+                        if (el.tagName === 'button' && el.content.includes('onclick=')) {
+                            attrsStr += (attrsStr ? ' ' : '') + el.content;
+                            innerText = ""; 
+                        }
+                        
+                        const children = htmlArray.filter(item => item.parentId === id);
+                        const innerHTML = innerText + children.map(c => buildTag(c.id)).join('');
+                        
+                        const selfClosing = ['img', 'br', 'hr', 'input', 'meta', 'link'].includes(el.tagName);
+                        if (selfClosing) return `<${el.tagName}${attrsStr ? ' ' + attrsStr : ''}>`;
+                        return `<${el.tagName}${attrsStr ? ' ' + attrsStr : ''}>${innerHTML}</${el.tagName}>`;
+                    };
+                    return `<!DOCTYPE html>${buildTag('html_root')}`;
+                }
+                return `<!DOCTYPE html><html><body>Error en estructura</body></html>`;
+            },
+
+            exportWithScript() {
+                const arrayJson = JSON.stringify(htmlArray, null, 2).replace(/<\/script>/g, '<\\/script>');
+                const htmlTemplate = `<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Render App</title>
+</head>
+<body>
+    <script id="mdi-dynamic-renderer">
+        (function() {
+            const htmlArray = ${arrayJson};
+            function renderApp() {
+                const rootData = htmlArray.find(el => el.tagName === 'html');
+                if (!rootData) return;
+                document.documentElement.className = rootData.class || "";
+                document.documentElement.style.cssText = rootData.style || "";
+                const buildElement = (id) => {
+                    const data = htmlArray.find(el => el.id === id);
+                    if (!data) return null;
+                    if (data.tagName === 'template' && data.content.startsWith('<template')) {
+                        const temp = document.createElement('div');
+                        temp.innerHTML = data.content;
+                        return temp.firstElementChild;
+                    }
+                    const el = document.createElement(data.tagName);
+                    if (data.id) el.id = data.id;
+                    if (data.class) el.className = data.class;
+                    if (data.style) el.style.cssText = data.style;
+                    if (data.tagName === 'link') {
+                        const hrefMatch = data.content.match(/href="([^"]+)"/);
+                        const relMatch = data.content.match(/rel="([^"]+)"/);
+                        if (hrefMatch) el.setAttribute('href', hrefMatch[1]);
+                        if (relMatch) el.setAttribute('rel', relMatch[1]);
+                    } else if (data.tagName === 'script') {
+                        if (data.content.includes('src=')) {
+                            const srcMatch = data.content.match(/src="([^"]+)"/);
+                            if (srcMatch) el.setAttribute('src', srcMatch[1]);
+                        } else {
+                            el.text = data.content;
+                        }
+                    } else if (data.tagName === 'button' && data.content.includes('onclick=')) {
+                        const clickMatch = data.content.match(/onclick="([^"]+)"/);
+                        if (clickMatch) el.setAttribute('onclick', clickMatch[1]);
+                    } else if (data.content && !data.content.includes('onclick=')) {
+                        el.innerHTML = data.content;
+                    }
+                    if (data.tagName !== 'script') {
+                        const children = htmlArray.filter(item => item.parentId === id);
+                        children.forEach(child => {
+                            const childEl = buildElement(child.id);
+                            if (childEl) el.appendChild(childEl);
+                        });
+                    }
+                    return el;
+                };
+                const headData = htmlArray.find(el => el.tagName === 'head');
+                if (headData) {
+                    const headChildren = htmlArray.filter(el => el.parentId === headData.id);
+                    headChildren.forEach(child => {
+                        const node = buildElement(child.id);
+                        if (node) document.head.appendChild(node);
+                    });
+                }
+                const bodyData = htmlArray.find(el => el.tagName === 'body');
+                if (bodyData) {
+                    document.body.className = bodyData.class || "";
+                    document.body.style.cssText = bodyData.style || "";
+                    const bodyChildren = htmlArray.filter(el => el.parentId === bodyData.id);
+                    bodyChildren.forEach(child => {
+                        const node = buildElement(child.id);
+                        if (node) document.body.appendChild(node);
+                    });
+                }
+            }
+            renderApp();
+        })();
+    <\/script>
+</body>
+</html>`;
+                const blob = new Blob([htmlTemplate], { type: 'text/html' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'dynamic_render_v2.html';
+                a.click();
+            },
+
+            refreshManualUI() {
+                this.refreshManualList();
+                this.refreshSkeleton();
+                this.refreshParentSelector();
+                this.refreshCustomHeadList();
+            },
+
+            refreshManualList() {
+                const lists = [$('#manual-elements-list'), $('#import-elements-list')];
+                lists.forEach(tbody => {
+                    if (!tbody || !tbody.length) return;
+                    tbody.empty();
+                    htmlArray.forEach((el, index) => {
+                        const isEditing = editingIndex === index;
+                        const row = $(`
+                            <tr class="${isEditing ? 'editing-row' : ''}">
+                                <td><span class="badge ${['html','head','body','template', 'link', 'script', 'button'].includes(el.tagName) ? 'bg-primary' : 'bg-secondary'}">${el.tagName}</span></td>
+                                <td><small class="fw-bold"></small></td>
+                                <td><small class="text-truncate d-inline-block text-muted" style="max-width:140px"></small></td>
+                                <td><small class="text-muted"></small></td>
+                                <td><small class="text-primary"></small></td>
+                                <td class="text-end">
+                                    <button class="btn btn-xs btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                </td>
+                            </tr>
+                        `);
+                        row.find('td:nth-child(2) small').text(el.id || '-');
+                        row.find('td:nth-child(3) small').text(el.content || '');
+                        row.find('td:nth-child(4) small').text(`${el.class || ''} ${el.style || ''}`);
+                        row.find('td:nth-child(5) small').text(el.parentId || 'RAÍZ');
+                        row.on('click', () => app.editManualElement(index));
+                        row.find('button').on('click', (e) => { e.stopPropagation(); app.removeManualElement(index); });
+                        tbody.append(row);
+                    });
+                });
+            },
+
+            refreshSkeleton() {
+                const targetManual = $('#basic-html-skeleton');
+                const targetImport = $('#import-skeleton-view');
+                const buildSkeletonTree = (parentId = "") => {
+                    const children = htmlArray.filter(el => el.parentId === parentId);
+                    if (children.length === 0) return '';
+                    return children.map(el => {
+                        if (el.tagName === 'template' && el.content.startsWith('<template')) {
+                            return `<div class="node-wrapper"><span class="tree-comment">&lt;!-- Bloque Template Almacenado --&gt;</span><div class="text-info">${escapeHTML(el.content.substring(0, 100))}...</div></div>`;
+                        }
+                        let attrs = '';
+                        const isSpecialAttr = (el.tagName === 'link' && el.content.includes('href=')) || 
+                                            (el.tagName === 'script' && el.content.includes('src=')) ||
+                                            (el.tagName === 'button' && el.content.includes('onclick='));
+                        if (isSpecialAttr) {
+                            attrs = ` <span class="tree-attr-val">${escapeHTML(el.content)}</span>`;
+                        } else {
+                            if (el.id) attrs += ` <span class="tree-attr-key">id</span>=<span class="tree-attr-val">"${escapeHTML(el.id)}"</span>`;
+                            if (el.class) attrs += ` <span class="tree-attr-key">class</span>=<span class="tree-attr-val">"${escapeHTML(el.class)}"</span>`;
+                            if (el.style) attrs += ` <span class="tree-attr-key">style</span>=<span class="tree-attr-val">"${escapeHTML(el.style)}"</span>`;
+                        }
+                        const content = (el.content && !isSpecialAttr) ? `<span class="text-white">${escapeHTML(el.content)}</span>` : '';
+                        const subTree = buildSkeletonTree(el.id);
+                        const selfClosing = ['img', 'br', 'hr', 'input', 'meta', 'link'].includes(el.tagName);
+                        if (selfClosing) return `<div class="node-wrapper"><div><span class="tree-tag">&lt;${el.tagName}</span>${attrs}<span class="tree-tag">/&gt;</span></div></div>`;
+                        return `<div class="node-wrapper"><div><span class="tree-tag">&lt;${el.tagName}</span>${attrs}<span class="tree-tag">&gt;</span>${content}</div>${subTree ? `<div class="node-container">${subTree}</div>` : ''}<div><span class="tree-tag">&lt;/${el.tagName}&gt;</span></div></div>`;
+                    }).join('');
+                };
+                const hasHtmlRoot = htmlArray.some(el => el.tagName === 'html');
+                const htmlContent = hasHtmlRoot ? buildSkeletonTree("") : `<div class="tree-comment">&lt;!-- Importar archivo para ver --&gt;</div>`;
+                if (targetManual.length) targetManual.empty().append(htmlContent);
+                if (targetImport.length) targetImport.empty().append(htmlContent);
+            },
+
+            openExternalPreview() {
+                const content = this.getExportContent();
+                const blob = new Blob([content], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+            },
+
+            updateBodyConfig() { bodyConfig.class = $('#body-class-input').val() || ''; bodyConfig.style = $('#body-style-input').val() || ''; this.refreshSkeleton(); },
+            toggleHeadInputFields() { const type = $('#new-head-type').val(); $('#new-head-tag').toggle(type === 'generic'); },
+            addHeadLibrary() { const type = $('#new-head-type').val(); const tag = type === 'generic' ? $('#new-head-tag').val() : type; const val = $('#new-head-val').val(); if (!tag || !val) return; headLibraries.push({ type, tag, val, id: Date.now() }); $('#new-head-val').val(''); this.refreshManualUI(); },
+            removeHeadLibrary(id) { headLibraries = headLibraries.filter(lib => lib.id !== id); this.refreshManualUI(); },
+            async refreshDashboardStats() { const count = await db.html_elements.count(); $('#dash-project-count').text(count); $('#dash-element-count').text(htmlArray.length); },
+            handleTagInput(input) { const tag = input.value.trim().toLowerCase(); if (!tag || editingIndex !== -1) return; $('#auto-id-field').val(`${tag}_${htmlArray.length + 1}`); },
+            refreshParentSelector() { const s = $('#parent-id-selector'); if(!s.length) return; s.empty().append('<option value="">body</option>'); htmlArray.forEach(el => { if (el.id) s.append(`<option value="${el.id}">${el.id} (${el.tagName})</option>`); }); },
+            refreshCustomHeadList() { const c = $('#custom-head-list'); if(!c.length) return; c.empty(); headLibraries.forEach(lib => { c.append(`<div class="list-group-item d-flex justify-content-between py-1 small">${lib.tag}: ${lib.val} <i class="bi bi-x-circle text-danger cursor-pointer" onclick="app.removeHeadLibrary(${lib.id})"></i></div>`); }); },
+            addElementToArray(btn) { const f = $(btn).closest('form'); const d = { tagName: f.find('[name="tagName"]').val().toLowerCase(), id: f.find('[name="idName"]').val(), class: f.find('[name="className"]').val(), style: f.find('[name="styleAttr"]').val(), parentId: f.find('[name="parentId"]').val(), content: f.find('[name="textContent"]').val() }; if (editingIndex === -1) htmlArray.push(d); else { htmlArray[editingIndex] = d; editingIndex = -1; } f[0].reset(); this.refreshManualUI(); },
+            editManualElement(i) { editingIndex = i; const el = htmlArray[i]; const f = $('#form-element-creator'); f.find('[name="tagName"]').val(el.tagName); f.find('[name="idName"]').val(el.id); f.find('[name="parentId"]').val(el.parentId); f.find('[name="textContent"]').val(el.content); $('#btn-cancel-edit').show(); this.refreshManualList(); },
+            cancelEdit() { editingIndex = -1; $('#form-element-creator')[0].reset(); $('#btn-cancel-edit').hide(); this.refreshManualList(); },
+            removeManualElement(i) { htmlArray.splice(i, 1); this.refreshManualUI(); },
+            updateManualPreview() { const iframe = document.getElementById('manual-preview-frame'); if (!iframe) return; const doc = iframe.contentDocument; doc.open(); doc.write(this.getExportContent()); doc.close(); },
+            exportToHTML() { const blob = new Blob([this.getExportContent()], { type: 'text/html' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'app.html'; a.click(); },
+            closeWindow(id) { $(`#${id}`).remove(); },
+            async updateDBStatus() { const c = await db.html_elements.count(); $('#db-status-footer').html(`DB Conectada | Registros: ${c}`); },
+        };
+
+        const ui = {
+            togglePanel(id) { $(`#${id}-panel`).toggleClass('collapsed'); },
+            toggleTheme(init = false) { const b = $('body'); if (!init) b.toggleClass('dark-mode'); else b.addClass('dark-mode'); db.settings.put({ id: 'theme', value: b.hasClass('dark-mode') ? 'dark' : 'light' }); },
+            toggleFullScreen() { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); }
+        };
+
+        $(document).ready(() => app.init());
+    </script>
+</body>
+</html>

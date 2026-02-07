@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplicación Modular Pro - Server Scan Edition</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
+    
+    <style>
+        :root { --transition-speed: 0.3s; }
+        
+        body.dark-mode { background-color: #0f172a; color: #f1f5f9; }
+        .dark-mode header, .dark-mode nav, .dark-mode aside, .dark-mode footer, .dark-mode .window-card {
+            background-color: #1e293b !important; border-color: #334155 !important; color: #f1f5f9 !important;
+        }
+        .dark-mode main { background-color: #0f172a !important; background-image: radial-gradient(#334155 1px, transparent 1px) !important; }
+        .dark-mode .window-header { background-color: #334155 !important; border-bottom-color: #475569 !important; }
+        .dark-mode input, .dark-mode .bg-gray-50, .dark-mode .bg-white { background-color: #1e293b !important; color: #f1f5f9 !important; border-color: #334155 !important; }
+        
+        body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        .collapsible { transition: all var(--transition-speed) ease-in-out; overflow: hidden; position: relative; }
+        .collapsed-h { height: 0 !important; min-height: 0 !important; padding: 0 !important; margin: 0 !important; border: 0 !important; }
+        .collapsed-w { width: 0 !important; min-width: 0 !important; padding: 0 !important; margin: 0 !important; border: 0 !important; }
+        
+        .nav-expanded { width: 256px; min-width: 256px; }
+        .nav-collapsed { width: 64px; min-width: 64px; }
+        .nav-collapsed .nav-text, .nav-collapsed .nav-header-text, .nav-collapsed .win-controls, .nav-collapsed .nav-input-group { display: none !important; }
+        
+        main { flex: 1; overflow: auto; position: relative; background-image: radial-gradient(#e5e7eb 1px, transparent 1px); background-size: 20px 20px; }
+        
+        .window-card { position: absolute; width: 600px; height: 450px; background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); display: flex; flex-direction: column; z-index: 10; overflow: hidden; }
+        .window-header { padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; cursor: move; display: flex; justify-content: space-between; align-items: center; user-select: none; }
+        .window-body { flex: 1; overflow: hidden; position: relative; }
+        .window-body iframe { width: 100%; height: 100%; border: none; background: white; }
+        
+        .window-maximized { top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; border-radius: 0; }
+        .window-minimized { height: 38px !important; width: auto !important; min-width: 160px; }
+        .window-minimized .window-body { display: none; }
+        
+        .btn-win-tool { @apply p-1 rounded hover:bg-gray-200 transition-colors flex items-center justify-center text-gray-500; }
+        .inspector-section-content { display: none; padding: 8px; background: #fff; font-family: 'Fira Code', monospace; font-size: 10px; }
+        .inspector-section-content.active { display: block; }
+
+        .iframe-overlay { display: none; position: absolute; inset: 0; z-index: 20; }
+        .ui-draggable-dragging .iframe-overlay, .ui-resizable-resizing .iframe-overlay { display: block !important; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900" id="app-body">
+
+    <header id="header" class="collapsible flex items-center justify-between px-6 py-3 bg-white border-b shadow-sm min-h-[64px] z-40">
+        <h1 class="text-xl font-bold font-mono tracking-tighter text-blue-600">APP_CORE v3.0.0</h1>
+        <div class="flex gap-2">
+            <button onclick="toggleDarkMode()" id="theme-toggle-btn" class="text-[10px] font-bold border px-3 py-1 rounded hover:bg-gray-100 uppercase">Tema</button>
+            <button onclick="toggleSection('header')" class="text-[10px] font-bold opacity-50 uppercase border px-2 py-1 rounded">Ocultar</button>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden relative">
+        <nav id="nav" class="collapsible nav-expanded bg-white border-r flex flex-col z-30">
+            <div class="p-4 flex justify-between items-center border-b">
+                <span class="nav-header-text font-semibold text-xs text-gray-500 uppercase">Menú Principal</span>
+                <button onclick="toggleNav()" class="p-1 hover:bg-gray-100 rounded">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+            </div>
+
+            <div class="p-3 space-y-4">
+                <!-- Botón de Escaneo -->
+                <button onclick="scanRemoteServer()" class="w-full py-2 bg-indigo-600 text-white text-[10px] font-bold uppercase rounded shadow hover:bg-indigo-700 transition-all flex items-center justify-center gap-2">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12A10 10 0 1 1 12 2v10z"/><path d="M22 12A10 10 0 0 0 12 2"/></svg>
+                    <span class="nav-text">Escanear Servidor</span>
+                </button>
+
+                <div class="nav-input-group space-y-2">
+                    <div class="flex gap-1">
+                        <input type="text" id="external-url" placeholder="https://..." class="w-full text-xs p-2 rounded border">
+                        <button onclick="handleUrlSubmit()" class="p-2 bg-gray-200 rounded hover:bg-blue-500 hover:text-white">GO</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto px-2 py-4 border-t" id="win-links-container"></div>
+            
+            <div class="p-2 border-t space-y-1">
+                <button onclick="openInternalWindow('db')" class="flex items-center gap-3 w-full px-3 py-2 rounded text-green-600 hover:bg-green-50 text-sm font-medium">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                    <span class="nav-text">Base de Datos</span>
+                </button>
+                <button onclick="openInternalWindow('config')" class="flex items-center gap-3 w-full px-3 py-2 rounded text-blue-500 hover:bg-blue-50 text-sm font-medium">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1-2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <span class="nav-text">Configuración</span>
+                </button>
+            </div>
+        </nav>
+
+        <main id="main" class="flex-1 bg-white relative">
+            <div id="desktop-bg" class="absolute inset-0 pointer-events-none opacity-5 flex items-center justify-center">
+                <span class="text-6xl font-black text-gray-400 select-none uppercase">Editor Workspace</span>
+            </div>
+        </main>
+
+        <aside id="aside" class="collapsible w-96 bg-gray-50 border-l flex flex-col z-30">
+            <div class="p-4 flex justify-between items-center border-b bg-white">
+                <span class="font-bold text-[10px] text-gray-500 uppercase tracking-widest">Inspector de Módulos</span>
+                <button onclick="toggleSection('aside')" class="p-1 hover:bg-gray-200 rounded">✕</button>
+            </div>
+            <div id="inspector-root" class="flex-1 overflow-y-auto pb-10">
+                <div class="p-10 text-center opacity-30 text-xs italic">Selecciona una ventana activa.</div>
+            </div>
+        </aside>
+    </div>
+
+    <footer id="footer" class="collapsible bg-white border-t p-2 flex justify-between items-center text-[10px] font-mono min-h-[32px]">
+        <div class="flex gap-4 px-4">
+            <span id="storage-status" class="text-green-600">DEXIE: ONLINE</span>
+            <span id="server-status" class="text-blue-500">SERVER: NOT CONFIGURED</span>
+        </div>
+        <div class="flex gap-2 mr-4">
+             <span id="loading-indicator" class="hidden animate-pulse text-indigo-600 font-bold">CARGANDO...</span>
+        </div>
+    </footer>
+
+    <script>
+        let db;
+        const state = {
+            activeWindows: [],
+            focusedWindowId: null,
+            internalOpen: { db: false, config: false },
+            darkMode: false,
+            serverUrl: '',
+            relativeRoute: '',
+            possibleFilenames: ['index.html', 'main.html', 'app.html', 'dashboard.html', 'admin.html', 'test.html']
+        };
+
+        // --- DATABASE ---
+        db = new Dexie("AppCore_V4");
+        db.version(1).stores({
+            settings: "key, value",
+            bookmarks: "++id, url, title"
+        });
+
+        // --- INIT ---
+        async function init() {
+            const server = await db.settings.get('serverUrl');
+            const route = await db.settings.get('relativeRoute');
+            const dark = await db.settings.get('darkMode');
+
+            state.serverUrl = server?.value || '';
+            state.relativeRoute = route?.value || '';
+            if (dark?.value) toggleDarkMode(true);
+            
+            updateServerStatusDisplay();
+        }
+
+        // --- SERVER SCAN LOGIC ---
+        async function scanRemoteServer() {
+            if (!state.serverUrl) {
+                alert("Primero configura el Servidor en Ajustes.");
+                openInternalWindow('config');
+                return;
+            }
+
+            $('#loading-indicator').show();
+            
+            // Construir la URL base de forma segura
+            let baseUrl = state.serverUrl.trim();
+            if (!baseUrl.endsWith('/')) baseUrl += '/';
+            
+            let route = state.relativeRoute.trim();
+            if (route && !route.endsWith('/')) route += '/';
+            if (route.startsWith('/')) route = route.substring(1);
+
+            const fullBase = baseUrl + route;
+
+            try {
+                const response = await fetch(fullBase);
+                if (!response.ok) throw new Error("Acceso denegado o ruta inexistente.");
+                
+                const htmlText = await response.text();
+                
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlText, "text/html");
+                
+                // Extraer todos los href que terminen en .html
+                const links = Array.from(doc.querySelectorAll('a'))
+                    .map(a => a.getAttribute('href'))
+                    .filter(href => {
+                        if (!href) return false;
+                        // Eliminar parámetros de búsqueda si los hay
+                        const cleanPath = href.split('?')[0].split('#')[0];
+                        return cleanPath.toLowerCase().endsWith('.html') && !cleanPath.includes('..');
+                    });
+
+                // Eliminar duplicados
+                const uniqueFiles = [...new Set(links)];
+
+                if (uniqueFiles.length === 0) {
+                    console.log("No se detectaron enlaces .html en el body. Intentando escaneo forzado de nombres comunes...");
+                    await scanCommonFilenames(fullBase);
+                } else {
+                    uniqueFiles.forEach(file => {
+                        // Resolver URL absoluta respecto a fullBase
+                        const fileUrl = new URL(file, fullBase).href;
+                        const fileName = file.split('/').pop();
+                        createWindowCard(`Módulo: ${fileName}`, fileUrl, 'web');
+                    });
+                }
+
+            } catch (e) {
+                console.error("Error durante el escaneo:", e);
+                alert("Error de conexión. Revisa que el servidor tenga CORS habilitado (Access-Control-Allow-Origin: *).");
+            } finally {
+                $('#loading-indicator').hide();
+            }
+        }
+
+        async function scanCommonFilenames(fullBase) {
+            let foundCount = 0;
+            for (const filename of state.possibleFilenames) {
+                const testUrl = fullBase + filename;
+                try {
+                    const response = await fetch(testUrl, { method: 'HEAD' });
+                    if (response.ok) {
+                        createWindowCard(`Auto: ${filename}`, testUrl, 'web');
+                        foundCount++;
+                    }
+                } catch (e) {}
+            }
+            if(foundCount === 0) alert("No se encontró ningún archivo .html en la ruta.");
+        }
+
+        function updateServerStatusDisplay() {
+            const status = document.getElementById('server-status');
+            if (state.serverUrl) {
+                status.innerText = `SERVER: ${state.serverUrl}`;
+                status.classList.remove('text-blue-500');
+                status.classList.add('text-green-600');
+            } else {
+                status.innerText = `SERVER: NOT CONFIGURED`;
+                status.classList.add('text-blue-500');
+                status.classList.remove('text-green-600');
+            }
+        }
+
+        // --- WINDOWS CORE ---
+        function createWindowCard(title, content, type = 'module') {
+            const windowId = `win-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+            const isInternal = type === 'db' || type === 'config';
+            
+            let resolvedUrl = content;
+            if (!isInternal && content) {
+                try {
+                    resolvedUrl = new URL(content, window.location.href).href;
+                } catch(e) { 
+                    resolvedUrl = content; 
+                }
+            }
+
+            const html = `
+                <div id="${windowId}" class="window-card" data-type="${type}" onclick="focusWindow('${windowId}')">
+                    <div class="window-header">
+                        <span class="text-[9px] font-bold truncate opacity-70 uppercase">${title}</span>
+                        <div class="flex items-center gap-1">
+                            <button onclick="toggleMinimize('${windowId}')" class="btn-win-tool">－</button>
+                            <button onclick="toggleMaximize('${windowId}')" class="btn-win-tool">□</button>
+                            <button onclick="removeWindow('${windowId}', '${type}')" class="btn-win-tool text-red-500">✕</button>
+                        </div>
+                    </div>
+                    <div class="window-body">
+                        <div class="iframe-overlay"></div>
+                        ${isInternal ? 
+                            `<div id="content-${windowId}" class="p-4 h-full overflow-auto bg-white text-xs font-mono"></div>` : 
+                            `<iframe id="iframe-${windowId}" src="${resolvedUrl}"></iframe>`
+                        }
+                    </div>
+                </div>
+            `;
+            
+            $('#main').append(html);
+            const win = $(`#${windowId}`);
+            
+            // Posicionamiento en cascada
+            const offset = state.activeWindows.length * 25;
+            win.css({ top: (60 + offset) + 'px', left: (60 + offset) + 'px' });
+            
+            win.draggable({ 
+                handle: ".window-header", 
+                containment: "#main", 
+                stack: ".window-card",
+                start: function() { focusWindow(windowId); }
+            }).resizable({
+                start: function() { focusWindow(windowId); }
+            });
+            
+            state.activeWindows.push({ id: windowId, title, type, url: resolvedUrl });
+            updateWindowsNav();
+            focusWindow(windowId);
+            
+            if (type === 'db') renderDB(windowId);
+            if (type === 'config') renderConfig(windowId);
+        }
+
+        function focusWindow(id) {
+            $('.window-card').css('z-index', 10);
+            $(`#${id}`).css('z-index', 50);
+            state.focusedWindowId = id;
+            updateWindowsNav();
+        }
+
+        function removeWindow(id, type) {
+            $(`#${id}`).remove();
+            state.activeWindows = state.activeWindows.filter(w => w.id !== id);
+            if (type === 'db') state.internalOpen.db = false;
+            if (type === 'config') state.internalOpen.config = false;
+            updateWindowsNav();
+        }
+
+        function toggleMaximize(id) { $(`#${id}`).toggleClass('window-maximized'); }
+        function toggleMinimize(id) { $(`#${id}`).toggleClass('window-minimized'); }
+        function toggleSection(id) { $(`#${id}`).toggleClass(id === 'header' || id === 'footer' ? 'collapsed-h' : 'collapsed-w'); }
+        function toggleNav() { $('#nav').toggleClass('nav-expanded nav-collapsed'); }
+
+        function updateWindowsNav() {
+            const container = document.getElementById('win-links-container');
+            container.innerHTML = state.activeWindows.map(win => `
+                <div class="px-2">
+                    <button onclick="focusWindow('${win.id}')" class="flex items-center gap-2 w-full px-3 py-2 text-[10px] truncate rounded ${state.focusedWindowId === win.id ? 'bg-blue-600 text-white font-bold' : 'hover:bg-gray-100 text-gray-600'}">
+                        <span class="truncate">${win.title}</span>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function toggleDarkMode(isInit = false) {
+            state.darkMode = isInit ? true : !state.darkMode;
+            $('#app-body').toggleClass('dark-mode', state.darkMode);
+            db.settings.put({ key: 'darkMode', value: state.darkMode });
+        }
+
+        async function openInternalWindow(type) {
+            if (state.internalOpen[type]) {
+                const existing = state.activeWindows.find(w => w.type === type);
+                if (existing) focusWindow(existing.id);
+                return;
+            }
+            state.internalOpen[type] = true;
+            createWindowCard(type === 'db' ? 'Explorador DB' : 'Configuración del Sistema', null, type);
+        }
+
+        // --- CONFIG & DB RENDERING ---
+        async function saveServerSettings() {
+            const url = document.getElementById('set-server-url').value;
+            const route = document.getElementById('set-relative-route').value;
+            
+            state.serverUrl = url;
+            state.relativeRoute = route;
+            
+            await db.settings.put({ key: 'serverUrl', value: url });
+            await db.settings.put({ key: 'relativeRoute', value: route });
+            
+            updateServerStatusDisplay();
+            alert("Configuración de servidor guardada.");
+        }
+
+        async function renderConfig(winId) {
+            const c = document.getElementById(`content-${winId}`);
+            if (!c) return;
+            c.innerHTML = `
+                <div class="space-y-6 max-w-md mx-auto py-4">
+                    <section class="border-b pb-4">
+                        <h2 class="text-xs font-bold uppercase mb-4 text-indigo-600 tracking-widest">Ajustes del Servidor</h2>
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-[10px] uppercase font-bold text-gray-400 mb-1">Servidor Base (URL)</label>
+                                <input type="text" id="set-server-url" value="${state.serverUrl}" placeholder="http://127.0.0.1:8080" class="w-full p-2 border rounded bg-gray-50 text-xs">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] uppercase font-bold text-gray-400 mb-1">Ruta Relativa</label>
+                                <input type="text" id="set-relative-route" value="${state.relativeRoute}" placeholder="proyectos/modulo_v1" class="w-full p-2 border rounded bg-gray-50 text-xs">
+                            </div>
+                            <button onclick="saveServerSettings()" class="w-full py-2 bg-indigo-600 text-white font-bold text-[10px] uppercase rounded">Aplicar Cambios</button>
+                        </div>
+                    </section>
+                    <section>
+                        <h2 class="text-xs font-bold uppercase mb-4 text-gray-600 tracking-widest">Mantenimiento</h2>
+                        <button onclick="db.delete().then(() => location.reload())" class="w-full py-2 border border-red-500 text-red-500 font-bold text-[10px] uppercase rounded hover:bg-red-50">Limpiar Base de Datos</button>
+                    </section>
+                </div>
+            `;
+        }
+
+        async function renderDB(winId) {
+            const c = document.getElementById(`content-${winId}`);
+            const settings = await db.settings.toArray();
+            c.innerHTML = `
+                <div class="p-2">
+                    <h3 class="font-bold border-b mb-2">DB_STATE: settings</h3>
+                    <pre class="bg-gray-50 p-2 rounded text-[10px]">${JSON.stringify(settings, null, 2)}</pre>
+                </div>
+            `;
+        }
+
+        function handleUrlSubmit() {
+            const url = document.getElementById('external-url').value;
+            if(url) {
+                createWindowCard(url.replace('https://', '').replace('http://', ''), url, 'web');
+                document.getElementById('external-url').value = '';
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
