@@ -96,6 +96,7 @@ class HTMLIframeManager {
 // Asegúrate de tener un elemento contenedor en tu HTML con el id 'iframe-container'
 document.addEventListener('DOMContentLoaded', () => {
  new HTMLIframeManager('#iframe-container');
+    new HTMLIframeManager('#iframe-container');
  });
 
 
