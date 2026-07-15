@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Studio MDI - Multi-formato</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- jQuery UI CSS -->
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
+    
+    <!-- Scripts Base -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <!-- Bootstrap JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Tailwind CSS Play CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            corePlugins: {
+                preflight: false,
+            }
+        }
+    </script>
+
+    <!-- dependencias de Summernote -->
+    <link href="https://cdn.jsdelivr.net/npm/summernote@0.9.0/dist/summernote-lite.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/summernote@0.9.0/dist/summernote-lite.min.js"></script>
+
+    <!-- PLANTILLA EDITOR -->
+    <template id="tpl-editor">
+        <div class="editor-container d-flex flex-column h-100">
+            <div class="toolbar-actions-custom p-1 border-bottom d-flex gap-1 align-items-center bg-themed-subtle">
+                <button class="btn btn-sm btn-primary action-save" title="Guardar cambios">
+                    <i class="bi bi-cloud-arrow-up"></i>
+                </button>
+                <button class="btn btn-sm btn-success action-download" title="Exportar HTML">
+                    <i class="bi bi-download"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-info action-preview" title="Previsualizar">
+                    <i class="bi bi-code-slash"></i>
+                </button>
+                <div class="ms-auto pe-2 d-flex align-items-center gap-2">
+                    <span class="badge bg-secondary file-type-badge" style="font-size: 0.6rem;">TEXT</span>
+                    <small class="text-muted status-msg" style="font-size: 0.75rem; font-weight: 500;">
+                        <i class="bi bi-circle-fill text-warning" style="font-size: 6px;"></i> Listo
+                    </small>
+                </div>
+            </div>
+            <div class="editor-wrapper flex-grow-1 overflow-hidden position-relative">
+                <div class="summernote-instance"></div>
+            </div>
+        </div>
+    </template>
+
+    <!-- PLANTILLA EXPLORADOR -->
+    <template id="tpl-explorer">
+        <div class="p-3 h-100 d-flex flex-column explorer-view">
+            <h6 class="explorer-header fw-bold mb-3 border-bottom pb-2"><i class="bi bi-database"></i> Documentos</h6>
+            <div class="list-group list-group-flush explorer-list overflow-auto mb-3" style="max-height: 200px;">
+                <div class="text-center text-muted mt-2">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                </div>
+            </div>
+
+            <h6 class="explorer-header fw-bold mb-3 border-bottom pb-2"><i class="bi bi-file-earmark-zip"></i> Recursos (Blobs)</h6>
+            <div class="list-group list-group-flush blob-list overflow-auto flex-grow-1">
+                <div class="text-center text-muted mt-2 small">Sin recursos</div>
+            </div>
+
+            <div class="mt-2 pt-2 border-top border-themed">
+                <input type="file" class="import-file-input d-none" id="import-input-trigger">
+                <button class="btn btn-sm btn-outline-primary w-100 action-import">
+                    <i class="bi bi-upload"></i> Importar (Doc o Blob)
+                </button>
+            </div>
+        </div>
+    </template>
+
+    <!-- PLANTILLA PREVISUALIZADOR -->
+    <template id="tpl-preview">
+        <div class="preview-outer h-100 w-100 overflow-auto p-3">
+            <div class="preview-card shadow p-4 mx-auto my-2" style="max-width: 800px; min-height: 297mm; border-radius: 4px;">
+                <div class="preview-content"></div>
+            </div>
+        </div>
+    </template>
+
+    <!-- PLANTILLA CONFIGURACIÓN -->
+    <template id="tpl-settings">
+        <div class="p-3 h-100 settings-view overflow-auto">
+            <nav>
+                <div class="nav nav-tabs mb-3" id="nav-tab" role="tablist">
+                    <button class="nav-link active py-1 px-3 small" id="nav-system-tab" data-bs-toggle="tab" data-bs-target="#nav-system" type="button" role="tab">Sistema</button>
+                    <button class="nav-link py-1 px-3 small" id="nav-user-tab" data-bs-toggle="tab" data-bs-target="#nav-user" type="button" role="tab">Usuario</button>
+                </div>
+            </nav>
+            <div class="tab-content" id="nav-tabContent">
+                <div class="tab-pane fade show active" id="nav-system" role="tabpanel">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Tema Visual</label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="setting-dark-mode" checked>
+                            <label class="form-check-label small" for="setting-dark-mode">Modo Oscuro</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="tab-pane fade" id="nav-user" role="tabpanel">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Nombre de Perfil</label>
+                        <input type="text" class="form-control form-control-sm" id="setting-username" placeholder="Tu nombre...">
+                    </div>
+                </div>
+            </div>
+            <div class="mt-4 pt-2 border-top">
+                <button class="btn btn-sm btn-primary w-100" id="btn-save-settings">Guardar Cambios</button>
+            </div>
+        </div>
+    </template>
+
+    <style>
+        :root { 
+            --sidebar-width: 240px; 
+            --sidebar-collapsed-width: 60px; 
+            --aside-width: 260px;
+            --primary-color: #0d6efd;
+            --primary-light: rgba(13, 110, 253, 0.1);
+            --primary-border: #0d6efd;
+            --bg-body: #cfd8dc;
+            --bg-panel: #f8f9fa;
+            --bg-window: #ffffff;
+            --bg-header: #ffffff;
+            --text-main: #212529;
+            --text-muted: #6c757d;
+            --border-color: #dee2e6;
+            --bg-subtle: #e9ecef;
+            --preview-bg: #f8f9fa;
+        }
+
+        /* PALETA DE COLOR OSCURA MEJORADA (Alto Contraste) */
+        body.dark-mode {
+            --bg-body: #0f111a;
+            --bg-panel: #161824;
+            --bg-window: #1f2235;
+            --bg-header: #1a1c2b;
+            --text-main: #f0f2f5;
+            --text-muted: #a0aec0; /* Gris claro de alto contraste */
+            --border-color: #2d3748;
+            --bg-subtle: #282c42;
+            --preview-bg: #141622;
+        }
+
+        body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--bg-body); color: var(--text-main); transition: background 0.3s, color 0.3s; }
+        #header { height: 56px; z-index: 2000; background: var(--bg-header) !important; box-shadow: 0 1px 2px rgba(0,0,0,0.1); border-top: 3px solid var(--primary-color) !important; border-bottom: 1px solid var(--border-color) !important;}
+        #wrapper { display: flex; flex: 1; overflow: hidden; position: relative; }
+        #main-content { flex: 1; position: relative; overflow: hidden; }
+
+        #nav-panel, #aside-panel { background: var(--bg-panel); border-color: var(--border-color); z-index: 1050; transition: all 0.3s; display: flex; flex-direction: column; }
+        #nav-panel { width: var(--sidebar-width); border-right: 1px solid var(--border-color); }
+        #nav-panel.collapsed { width: var(--sidebar-collapsed-width); }
+        #nav-panel.collapsed .menu-text { display: none; }
+        #aside-panel { width: var(--aside-width); border-left: 1px solid var(--border-color); }
+        #aside-panel.collapsed { margin-right: calc(var(--aside-width) * -1); }
+
+        /* Contenedor de Ventanas del MDI */
+        .app-window { position: absolute; background: var(--bg-window); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; }
+        .window-header { background: var(--bg-subtle); padding: 6px 12px; cursor: move; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); user-select: none; min-height: 38px; color: var(--text-main); }
+        .window-title { font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; }
+        .window-body { flex: 1; overflow: hidden; position: relative; background: var(--bg-window); color: var(--text-main); }
+        .win-btn { border: none; background: transparent; color: #888; border-radius: 4px; padding: 2px 6px; font-size: 0.8rem; }
+        .win-btn:hover { background: var(--primary-light); color: var(--primary-color); }
+
+        /* Estilo de Botones del Menú */
+        .menu-btn { text-align: left; border: none; background: transparent; padding: 10px 15px; width: 100%; display: flex; align-items: center; gap: 12px; color: var(--text-muted); font-size: 0.9rem; transition: color 0.2s, background-color 0.2s; }
+        .menu-btn:hover:not(:disabled) { background: var(--primary-light); color: var(--text-main); }
+        .menu-btn.active { border-left: 3px solid var(--primary-color); background: var(--primary-light); color: var(--text-main); }
+        .menu-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .list-group-item.disabled-element {
+            pointer-events: none;
+            opacity: 0.5;
+            background-color: var(--bg-subtle) !important;
+            border-left: 3px solid var(--primary-color) !important;
+        }
+
+        .nav-tabs .nav-link { color: var(--text-main); border: none; margin-bottom: 0; }
+        .nav-tabs .nav-link.active { background: var(--primary-light); color: var(--primary-color); border-bottom: 2px solid var(--primary-color); }
+
+        /* Estilos de la Previsualización de Hojas */
+        .preview-outer { background: var(--preview-bg); }
+        .preview-card {
+            background: var(--bg-window);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+        }
+
+        /* OVERRIDES DE CONTEXTO Y COMPONENTES EN MODO OSCURO */
+        body.dark-mode .text-muted,
+        body.dark-mode .status-msg,
+        body.dark-mode .text-center.text-muted {
+            color: var(--text-muted) !important;
+        }
+        
+        body.dark-mode .list-group-item {
+            background-color: var(--bg-window) !important;
+            color: var(--text-main) !important;
+            border-color: var(--border-color) !important;
+        }
+        
+        body.dark-mode .list-group-item-action:hover {
+            background-color: var(--bg-subtle) !important;
+            color: var(--text-main) !important;
+        }
+
+        body.dark-mode .menu-btn {
+            color: var(--text-muted) !important;
+        }
+        body.dark-mode .menu-btn:hover:not(:disabled),
+        body.dark-mode .menu-btn.active {
+            color: #ffffff !important;
+        }
+
+        /* CONFIGURACIÓN DE SUMMERNOTE EN MODO OSCURO */
+        .note-editor { display: flex !important; flex-direction: column; height: 100% !important; border-radius: 0 !important; border: none !important; }
+        .note-editing-area { flex: 1 !important; display: flex !important; flex-direction: column; }
+        .note-editable { flex: 1 !important; }
+        
+        body.dark-mode .note-editor { background: #1e1e1e; }
+        body.dark-mode .note-toolbar { background: #232533 !important; border-bottom: 1px solid var(--border-color) !important; color: #fff !important; }
+        body.dark-mode .note-btn { background-color: #2d3042 !important; border: 1px solid #3d4663 !important; color: #f0f2f5 !important; }
+        body.dark-mode .note-btn:hover { background-color: #3d425c !important; color: #ffffff !important; }
+        body.dark-mode .note-editable { background: #1f2235 !important; color: #fff !important; }
+        body.dark-mode .note-dropdown-menu { background-color: #232533 !important; color: #fff !important; border: 1px solid var(--border-color) !important; }
+        body.dark-mode .note-dropdown-item { color: #fff !important; }
+        body.dark-mode .note-dropdown-item:hover { background-color: #3d425c !important; }
+
+        #custom-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+        .custom-modal-box { background: var(--bg-window); color: var(--text-main); width: 400px; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); border: 1px solid var(--border-color); }
+    </style>
+</head>
+<body class="dark-mode">
+
+    <header id="header" class="navbar navbar-light px-3">
+        <div class="d-flex align-items-center gap-3">
+            <button class="btn btn-sm btn-outline-secondary" id="toggle-nav"><i class="bi bi-list"></i></button>
+            <span class="navbar-brand mb-0 h1 fs-6 fw-bold text-primary"><i class="bi bi-code-square"></i> STUDIO MDI</span>
+        </div>
+        <div class="ms-auto d-flex gap-2">
+            <button class="btn btn-sm btn-primary px-3" id="btn-header-new">
+                <i class="bi bi-plus-lg"></i> <span class="d-none d-sm-inline">Nuevo</span>
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="toggle-aside">
+                <i class="bi bi-layout-sidebar-reverse"></i>
+            </button>
+        </div>
+    </header>
+
+    <div id="wrapper">
+        <nav id="nav-panel" class="p-2">
+            <div class="flex-grow-1">
+                <button class="menu-btn" id="btn-nav-new"><i class="bi bi-file-earmark-plus"></i> <span class="menu-text">Crear Documento</span></button>
+                <button class="menu-btn" id="btn-nav-explorer"><i class="bi bi-folder2-open"></i> <span class="menu-text">Explorador de DB</span></button>
+            </div>
+            <div class="mt-auto border-top border-themed pt-2">
+                <button class="menu-btn w-100" id="btn-open-settings">
+                    <i class="bi bi-gear-fill"></i> <span class="menu-text">Configuración</span>
+                </button>
+            </div>
+        </nav>
+
+        <main id="main-content"></main>
+
+        <aside id="aside-panel" class="p-3 collapsed">
+            <h6 class="fw-bold small border-bottom border-themed pb-2">Sesión Activa</h6>
+            <div id="active-windows-list" class="mt-2 d-flex flex-column gap-2"></div>
+        </aside>
+    </div>
+
+    <div id="custom-modal-overlay" class="d-none">
+        <div class="custom-modal-box p-4">
+            <h6 id="modal-title" class="fw-bold mb-3"></h6>
+            <p id="modal-message" class="small mb-3"></p>
+            <div id="modal-input-group">
+                <input type="text" id="modal-input" class="form-control form-control-sm mb-3" placeholder="Nombre...">
+                <select id="modal-select-type" class="form-select form-select-sm mb-3">
+                    <option value="html">HTML</option>
+                    <option value="text">TXT</option>
+                </select>
+            </div>
+            <div class="d-flex justify-content-end gap-2">
+                <button id="modal-cancel" class="btn btn-sm btn-outline-secondary">Cancelar</button>
+                <button id="modal-ok" class="btn btn-primary btn-sm px-3">Aceptar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Inicializar base de datos local
+        const studioDatabase = new Dexie("StudioMDI_V2");
+        studioDatabase.version(2).stores({ 
+            docs: '++id, title, content, type, updated',
+            assets: '++id, fileName, fileBlob, mimeType, size, updated'
+        });
+
+        let mdiWindowCount = 0;
+        let mdiZIndexTop = 1000;
+
+        // Parámetros de configuración para la cascada de ventanas
+        const CASCADE_START_X = 40;
+        const CASCADE_START_Y = 40;
+        const CASCADE_STEP_X = 35;
+        const CASCADE_STEP_Y = 35;
+
+        const studioUI = {
+            showModal: function(title, message, type = 'alert', options = {}) {
+                return new Promise((resolve) => {
+                    $('#modal-title').text(title);
+                    $('#modal-message').text(message);
+                    $('#modal-input').val(options.defName || '');
+                    $('#modal-input-group').toggleClass('d-none', type !== 'prompt');
+                    $('#custom-modal-overlay').removeClass('d-none');
+                    $('#modal-ok').off('click').one('click', () => {
+                        $('#custom-modal-overlay').addClass('d-none');
+                        resolve({ name: $('#modal-input').val(), type: $('#modal-select-type').val() });
+                    });
+                    $('#modal-cancel').off('click').one('click', () => {
+                        $('#custom-modal-overlay').addClass('d-none');
+                        resolve(null);
+                    });
+                });
+            }
+        };
+
+        const studioApp = {
+            init: function() {
+                this.loadSettings();
+                this.bindEvents();
+                studioDatabase.open();
+            },
+
+            loadSettings: function() {
+                const dark = localStorage.getItem('studio_dark_mode') !== 'false';
+                $('body').toggleClass('dark-mode', dark);
+            },
+
+            bindEvents: function() {
+                $('#btn-header-new, #btn-nav-new').on('click', (e) => this.openNewEditor(e.currentTarget));
+                $('#btn-nav-explorer').on('click', (e) => this.createWindow('explorer', 'Explorador', null, e.currentTarget));
+                $('#btn-open-settings').on('click', (e) => this.createWindow('settings', 'Configuración', null, e.currentTarget));
+                $('#toggle-nav').on('click', () => $('#nav-panel').toggleClass('collapsed'));
+                $('#toggle-aside').on('click', () => $('#aside-panel').toggleClass('collapsed'));
+            },
+
+            openNewEditor: async function(sourceBtn) {
+                const result = await studioUI.showModal("Nuevo Archivo", "Configura el documento:", "prompt", { defName: "Documento_" + (mdiWindowCount + 1) });
+                if (result && result.name) {
+                    this.createWindow('editor', result.name, { type: result.type, content: '' }, sourceBtn);
+                }
+            },
+
+            createWindow: function(viewId, title, initialData = null, sourceElement = null) {
+                mdiWindowCount++;
+                const winId = `win-${mdiWindowCount}`;
+                mdiZIndexTop += 5;
+
+                const main = document.getElementById('main-content');
+                const mainW = main.clientWidth;
+                const mainH = main.clientHeight;
+                
+                // Dimensiones dinámicas proporcionales
+                const winW = Math.max(350, Math.floor(mainW * 0.55));
+                const winH = Math.max(250, Math.floor(mainH * 0.55));
+
+                // 1. Obtener lista de ventanas visibles y activas (no minimizadas)
+                const activeWindows = $('.app-window:not(.minimized)').map(function() {
+                    const $el = $(this);
+                    return {
+                        id: $el.attr('id'),
+                        left: parseInt($el.css('left'), 10) || CASCADE_START_X,
+                        top: parseInt($el.css('top'), 10) || CASCADE_START_Y,
+                        zIndex: parseInt($el.css('z-index'), 10) || 0
+                    };
+                }).get();
+
+                let posX = CASCADE_START_X;
+                let posY = CASCADE_START_Y;
+
+                // 2. Si hay ventanas abiertas, calcular posición en base a la ventana de nivel superior
+                if (activeWindows.length > 0) {
+                    // Ordenar de mayor a menor zIndex para encontrar la que está al frente
+                    activeWindows.sort((a, b) => b.zIndex - a.zIndex);
+                    const topWin = activeWindows[0];
+
+                    posX = topWin.left + CASCADE_STEP_X;
+                    posY = topWin.top + CASCADE_STEP_Y;
+
+                    // 3. Control de límites físicos del viewport (Evitar salirse de la pantalla)
+                    if (posX + winW > mainW - 20 || posY + winH > mainH - 20) {
+                        posX = CASCADE_START_X;
+                        posY = CASCADE_START_Y;
+
+                        // Algoritmo anti-solapamiento perfecto en origen
+                        let attempts = 0;
+                        while (attempts < 8) {
+                            const hasOverlap = activeWindows.some(w => Math.abs(w.left - posX) < 10 && Math.abs(w.top - posY) < 10);
+                            if (hasOverlap) {
+                                posX += CASCADE_STEP_X;
+                                posY += CASCADE_STEP_Y;
+                                attempts++;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (sourceElement) {
+                    $(sourceElement).addClass('disabled-element').attr('disabled', 'disabled');
+                    if($(sourceElement).hasClass('menu-btn')) $(sourceElement).addClass('active');
+                }
+
+                // Crear elemento DOM de la ventana
+                const win = document.createElement('div');
+                win.id = winId;
+                win.className = 'app-window';
+                win.style.cssText = `top:${posY}px; left:${posX}px; width:${winW}px; height:${winH}px; z-index:${mdiZIndexTop};`;
+
+                win.innerHTML = `
+                    <div class="window-header">
+                        <span class="window-title">
+                            <i class="bi bi-${viewId === 'settings' ? 'gear' : (viewId === 'preview' ? 'file-earmark-richtext' : 'window')}"></i> 
+                            ${title}
+                        </span>
+                        <div class="window-controls d-flex gap-1">
+                            <button class="win-btn min-btn"><i class="bi bi-dash-lg"></i></button>
+                            <button class="win-btn max-btn"><i class="bi bi-square"></i></button>
+                            <button class="win-btn close-btn"><i class="bi bi-x-lg"></i></button>
+                        </div>
+                    </div>
+                    <div class="window-body" id="body-${winId}"></div>
+                `;
+
+                main.appendChild(win);
+                const tpl = document.getElementById(`tpl-${viewId}`);
+                if (tpl) {
+                    const content = document.importNode(tpl.content, true);
+                    document.getElementById(`body-${winId}`).appendChild(content);
+                }
+
+                const $win = $(`#${winId}`);
+                $win.data('origin-ref', sourceElement);
+
+                // Configurar drag & drop y resize
+                $win.draggable({ handle: ".window-header", containment: "#main-content", stack: ".app-window" })
+                    .resizable({ minWidth: 350, minHeight: 250, containment: "#main-content" });
+
+                $win.find('.close-btn').on('click', () => {
+                    const origin = $win.data('origin-ref');
+                    if (origin) $(origin).removeClass('disabled-element active').removeAttr('disabled');
+                    if (viewId === 'editor') $win.find('.summernote-instance').summernote('destroy');
+                    $win.remove();
+                    this.updateAside();
+                });
+
+                $win.find('.min-btn').on('click', () => $win.toggleClass('minimized'));
+                $win.find('.max-btn').on('click', () => this.toggleMaximize(winId));
+                $win.on('mousedown', () => { mdiZIndexTop += 1; $win.css('z-index', mdiZIndexTop); });
+
+                if (viewId === 'editor') {
+                    this.initEditor($win, title, initialData);
+                } else if (viewId === 'explorer') {
+                    this.refreshExplorer(winId);
+                    this.initExplorerLogic($win);
+                } else if (viewId === 'settings') {
+                    this.initSettings($win);
+                } else if (viewId === 'preview') {
+                    this.initPreview($win, initialData);
+                }
+                this.updateAside();
+            },
+
+            initExplorerLogic: function($win) {
+                const winId = $win.attr('id');
+                const fileInput = $win.find('.import-file-input');
+
+                $win.find('.action-import').on('click', () => fileInput.click());
+
+                fileInput.on('change', async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    const isText = file.type.includes('text') || file.type.includes('html');
+
+                    if (isText) {
+                        const content = await file.text();
+                        await studioDatabase.docs.add({
+                            title: file.name,
+                            content: content,
+                            type: file.type.includes('html') ? 'html' : 'text',
+                            updated: new Date()
+                        });
+                    } else {
+                        await studioDatabase.assets.add({
+                            fileName: file.name,
+                            fileBlob: file,
+                            mimeType: file.type,
+                            size: file.size,
+                            updated: new Date()
+                        });
+                    }
+                    this.refreshExplorer(winId);
+                    fileInput.val('');
+                });
+            },
+
+            refreshExplorer: async function(winId) {
+                const $win = $(`#${winId}`);
+                const list = $win.find('.explorer-list').empty();
+                const blobList = $win.find('.blob-list').empty();
+
+                // Cargar Documentos guardados
+                const docs = await studioDatabase.docs.toArray();
+                if (docs.length === 0) list.append('<div class="text-center text-muted py-2 small">Sin documentos</div>');
+                docs.forEach(doc => {
+                    const item = $(`<div class="list-group-item list-group-item-action small d-flex justify-content-between align-items-center py-1 px-3">
+                        <span class="doc-trigger text-truncate flex-grow-1" style="cursor:pointer">
+                            <i class="bi bi-file-earmark-code me-2 text-primary"></i>${doc.title}
+                        </span>
+                        <i class="bi bi-trash text-danger ms-2" style="cursor:pointer"></i>
+                    </div>`);
+                    item.find('.doc-trigger').on('click', () => this.createWindow('editor', doc.title, doc, item[0]));
+                    item.find('.bi-trash').on('click', async (e) => {
+                        e.stopPropagation();
+                        await studioDatabase.docs.delete(doc.id);
+                        this.refreshExplorer(winId);
+                    });
+                    list.append(item);
+                });
+
+                // Cargar Recursos Binarios
+                const assets = await studioDatabase.assets.toArray();
+                if (assets.length === 0) blobList.append('<div class="text-center text-muted py-2 small">Sin recursos</div>');
+                assets.forEach(asset => {
+                    const icon = asset.mimeType.startsWith('image/') ? 'bi-image' : 'bi-file-earmark-zip';
+                    const item = $(`<div class="list-group-item list-group-item-action small d-flex justify-content-between align-items-center py-1 px-3">
+                        <span class="text-truncate flex-grow-1"><i class="bi ${icon} me-2 text-info"></i>${asset.fileName}</span>
+                        <i class="bi bi-trash text-danger ms-2" style="cursor:pointer"></i>
+                    </div>`);
+                    item.find('.bi-trash').on('click', async (e) => {
+                        e.stopPropagation();
+                        await studioDatabase.assets.delete(asset.id);
+                        this.refreshExplorer(winId);
+                    });
+                    blobList.append(item);
+                });
+            },
+
+            initSettings: function($win) {
+                const isDark = $('body').hasClass('dark-mode');
+                $win.find('#setting-dark-mode').prop('checked', isDark);
+                $win.find('#setting-username').val(localStorage.getItem('studio_username') || '');
+
+                $win.find('#btn-save-settings').on('click', () => {
+                    const dark = $win.find('#setting-dark-mode').is(':checked');
+                    const user = $win.find('#setting-username').val();
+                    localStorage.setItem('studio_dark_mode', dark);
+                    localStorage.setItem('studio_username', user);
+                    $('body').toggleClass('dark-mode', dark);
+                    const btn = $win.find('#btn-save-settings');
+                    btn.text("¡Guardado!").addClass('btn-success');
+                    setTimeout(() => btn.text("Guardar Cambios").removeClass('btn-success'), 2000);
+                });
+            },
+
+            initEditor: function($win, title, data) {
+                const $note = $win.find('.summernote-instance');
+                $note.summernote({
+                    height: '100%',
+                    toolbar: [
+                        ['style', ['style']],
+                        ['font', ['bold', 'underline', 'strikethrough', 'clear']],
+                        ['color', ['color']],
+                        ['para', ['ul', 'ol', 'paragraph']],
+                        ['table', ['table']],
+                        ['insert', ['link', 'picture', 'hr']],
+                        ['view', ['fullscreen', 'codeview']]
+                    ]
+                });
+                if (data) {
+                    $note.summernote('code', data.content);
+                    $win.data('db-id', data.id);
+                }
+                $win.data('doc-title', title);
+                
+                // Vincular guardado
+                $win.find('.action-save').on('click', () => this.saveFile($win.attr('id')));
+                
+                // Vincular descarga/exportación
+                $win.find('.action-download').on('click', () => this.exportFile($win.attr('id')));
+
+                // Vincular previsualización
+                $win.find('.action-preview').on('click', () => {
+                    const content = $note.summernote('code');
+                    this.createWindow('preview', `Previsualizar - ${title}`, { content: content });
+                });
+            },
+
+            initPreview: function($win, data) {
+                if (data && data.content) {
+                    $win.find('.preview-content').html(data.content);
+                } else {
+                    $win.find('.preview-content').html('<p class="text-muted">No hay contenido que previsualizar.</p>');
+                }
+            },
+
+            exportFile: function(winId) {
+                const $win = $(`#${winId}`);
+                const content = $win.find('.summernote-instance').summernote('code');
+                const title = $win.data('doc-title') || 'Documento';
+
+                // Generar blob HTML
+                const blob = new Blob([content], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+
+                // Forzar descarga del navegador
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `${title.replace(/\s+/g, '_')}.html`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            },
+
+            saveFile: async function(winId) {
+                const $win = $(`#${winId}`);
+                const content = $win.find('.summernote-instance').summernote('code');
+                const id = $win.data('db-id');
+                const title = $win.data('doc-title');
+                if (id) {
+                    await studioDatabase.docs.update(id, { content, updated: new Date() });
+                } else {
+                    const newId = await studioDatabase.docs.add({ title, type: 'html', content, updated: new Date() });
+                    $win.data('db-id', newId);
+                }
+                $('.explorer-view').each((i, el) => this.refreshExplorer($(el).closest('.app-window').attr('id')));
+            },
+
+            toggleMaximize: function(winId) {
+                const $win = $(`#${winId}`);
+                const $main = $('#main-content');
+                if ($win.hasClass('maximized')) {
+                    $win.removeClass('maximized').css($win.data('pre-max'));
+                } else {
+                    $win.data('pre-max', { top: $win.css('top'), left: $win.css('left'), width: $win.css('width'), height: $win.css('height') });
+                    $win.addClass('maximized').css({ top: 0, left: 0, width: $main.width(), height: $main.height() });
+                }
+            },
+
+            updateAside: function() {
+                const list = $('#active-windows-list').empty();
+                $('.app-window').each((i, el) => {
+                    const title = $(el).find('.window-title').text();
+                    const btn = $(`<button class="btn btn-sm btn-outline-secondary text-start w-100"><i class="bi bi-window-sidebar me-2"></i>${title}</button>`);
+                    btn.on('click', () => { mdiZIndexTop++; $(el).css('z-index', mdiZIndexTop); });
+                    list.append(btn);
+                });
+            }
+        };
+
+        $(document).ready(() => studioApp.init());
+    </script>
+</body>
+</html>
